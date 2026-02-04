@@ -1,0 +1,6 @@
+2026-01-31 23:40:53 | WARNING | PORTFOLIO_ENGINE | Invalid position size for MOCK: 0 shares
+2026-01-31 23:41:49 | INFO | PORTFOLIO_ENGINE | Trade plan for MOCK: 75 shares @ $5.5 (stop: $5.17, risk: $25.0)
+2026-01-31 23:42:10 | INFO | PORTFOLIO_ENGINE | Trade plan for MOCK: 75 shares @ $5.5 (stop: $5.17, risk: $25.0)
+2026-01-31 23:42:10 | INFO | PORTFOLIO_ENGINE | Trade plan for MOCK: 75 shares @ $5.5 (stop: $5.17, risk: $25.0)
+2026-01-31 23:42:10 | INFO | PORTFOLIO_ENGINE | Trade plan for TEST: 45 shares @ $12.3 (stop: $11.7465, risk: $25.0)
+2026-01-31 23:42:10 | INFO | PORTFOLIO_ENGINE | Trade plan for FAKE: 73 shares @ $3.2 (stop: $2.928, risk: $20.0)
