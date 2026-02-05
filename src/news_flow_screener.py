@@ -83,18 +83,98 @@ BEARISH_KEYWORDS = [
     'bankruptcy', 'default', 'dilution', 'offering'
 ]
 
-# Types d'events et leur impact potentiel
+# ============================
+# EVENT TYPES - UNIFIED TAXONOMY V6
+# ============================
+# Aligned with nlp_event_parser.py and catalyst_score_v3.py
+# Impact scores reflect real small-cap movement potential
+
 EVENT_TYPES = {
-    'FDA_APPROVAL': {'keywords': ['fda approv', 'clearance', 'breakthrough'], 'base_impact': 0.9},
-    'FDA_TRIAL': {'keywords': ['phase', 'trial', 'endpoint', 'efficacy'], 'base_impact': 0.8},
-    'EARNINGS_BEAT': {'keywords': ['beat', 'exceeded', 'record'], 'base_impact': 0.7},
-    'GUIDANCE_RAISE': {'keywords': ['guidance raise', 'raises guidance', 'outlook'], 'base_impact': 0.7},
-    'MERGER_ACQUISITION': {'keywords': ['acquisition', 'merger', 'buyout', 'takeover'], 'base_impact': 0.85},
-    'CONTRACT_WIN': {'keywords': ['contract', 'award', 'deal', 'order'], 'base_impact': 0.6},
-    'PARTNERSHIP': {'keywords': ['partnership', 'collaboration', 'agreement'], 'base_impact': 0.5},
-    'ANALYST_UPGRADE': {'keywords': ['upgrade', 'price target', 'buy rating'], 'base_impact': 0.4},
-    'SHORT_SQUEEZE': {'keywords': ['short squeeze', 'gamma', 'squeeze'], 'base_impact': 0.6},
-    'BREAKING_POSITIVE': {'keywords': ['surge', 'soar', 'spike', 'rally'], 'base_impact': 0.5}
+    # TIER 1 - CRITICAL (0.90-1.00)
+    'FDA_APPROVAL': {
+        'keywords': ['fda approval', 'fda approved', 'fda clears', 'fda clearance'],
+        'base_impact': 0.95
+    },
+    'PDUFA_DECISION': {
+        'keywords': ['pdufa', 'fda decision', 'fda accepts'],
+        'base_impact': 0.92
+    },
+    'BUYOUT_CONFIRMED': {
+        'keywords': ['acquired by', 'to be acquired', 'buyout announced', 'acquisition complete'],
+        'base_impact': 0.90
+    },
+
+    # TIER 2 - HIGH (0.75-0.89)
+    'FDA_TRIAL_POSITIVE': {
+        'keywords': ['phase 3', 'phase iii', 'met endpoint', 'positive results', 'trial success', 'efficacy'],
+        'base_impact': 0.85
+    },
+    'BREAKTHROUGH_DESIGNATION': {
+        'keywords': ['breakthrough therapy', 'breakthrough designation'],
+        'base_impact': 0.82
+    },
+    'FDA_FAST_TRACK': {
+        'keywords': ['fast track', 'fast-track', 'accelerated approval'],
+        'base_impact': 0.80
+    },
+    'MERGER_ACQUISITION': {
+        'keywords': ['merger', 'acquisition', 'takeover', 'buyout offer', 'm&a'],
+        'base_impact': 0.85
+    },
+    'EARNINGS_BEAT_BIG': {
+        'keywords': ['blowout earnings', 'crushed estimates', 'massive beat', 'record earnings'],
+        'base_impact': 0.82
+    },
+    'MAJOR_CONTRACT': {
+        'keywords': ['major contract', 'billion contract', 'million contract', 'government contract', 'defense contract'],
+        'base_impact': 0.78
+    },
+
+    # TIER 3 - MEDIUM-HIGH (0.60-0.74)
+    'GUIDANCE_RAISE': {
+        'keywords': ['raises guidance', 'raised outlook', 'upward revision', 'increased forecast'],
+        'base_impact': 0.70
+    },
+    'EARNINGS_BEAT': {
+        'keywords': ['beat', 'beats', 'exceeded', 'surpassed', 'topped estimates'],
+        'base_impact': 0.65
+    },
+    'PARTNERSHIP': {
+        'keywords': ['partnership', 'collaboration', 'strategic agreement', 'joint venture', 'alliance'],
+        'base_impact': 0.62
+    },
+    'PRICE_TARGET_RAISE': {
+        'keywords': ['price target raised', 'raises price target', 'new price target', 'target to'],
+        'base_impact': 0.60
+    },
+
+    # TIER 4 - MEDIUM (0.45-0.59)
+    'ANALYST_UPGRADE': {
+        'keywords': ['upgrade', 'upgraded', 'buy rating', 'outperform'],
+        'base_impact': 0.52
+    },
+    'SHORT_SQUEEZE_SIGNAL': {
+        'keywords': ['short squeeze', 'gamma squeeze', 'heavily shorted', 'short interest'],
+        'base_impact': 0.55
+    },
+    'UNUSUAL_VOLUME_NEWS': {
+        'keywords': ['unusual volume', 'volume spike', 'heavy trading'],
+        'base_impact': 0.48
+    },
+
+    # TIER 5 - SPECULATIVE (0.30-0.44)
+    'BUYOUT_RUMOR': {
+        'keywords': ['buyout rumor', 'acquisition rumor', 'takeover speculation', 'potential buyer'],
+        'base_impact': 0.42
+    },
+    'SOCIAL_MEDIA_SURGE': {
+        'keywords': ['wallstreetbets', 'wsb', 'reddit', 'trending', 'meme stock', 'viral'],
+        'base_impact': 0.38
+    },
+    'BREAKING_POSITIVE': {
+        'keywords': ['surge', 'soar', 'spike', 'rally', 'breakout'],
+        'base_impact': 0.35
+    }
 }
 
 
@@ -369,8 +449,14 @@ NEWS ITEMS:
 
 For each news item, extract:
 1. ALL stock tickers mentioned (format: uppercase, 1-5 letters)
-2. Event type: FDA_APPROVAL, FDA_TRIAL, EARNINGS_BEAT, GUIDANCE_RAISE, MERGER_ACQUISITION, CONTRACT_WIN, PARTNERSHIP, ANALYST_UPGRADE, SHORT_SQUEEZE, BREAKING_POSITIVE, or NONE
-3. Impact score: 0.0 to 1.0 (how likely to cause +20%+ move in small cap)
+2. Event type from this hierarchy:
+   TIER 1 (0.90-1.00): FDA_APPROVAL, PDUFA_DECISION, BUYOUT_CONFIRMED
+   TIER 2 (0.75-0.89): FDA_TRIAL_POSITIVE, BREAKTHROUGH_DESIGNATION, FDA_FAST_TRACK, MERGER_ACQUISITION, EARNINGS_BEAT_BIG, MAJOR_CONTRACT
+   TIER 3 (0.60-0.74): GUIDANCE_RAISE, EARNINGS_BEAT, PARTNERSHIP, PRICE_TARGET_RAISE
+   TIER 4 (0.45-0.59): ANALYST_UPGRADE, SHORT_SQUEEZE_SIGNAL, UNUSUAL_VOLUME_NEWS
+   TIER 5 (0.30-0.44): BUYOUT_RUMOR, SOCIAL_MEDIA_SURGE, BREAKING_POSITIVE
+   or NONE if no catalyst
+3. Impact score: aligned with tier (FDA_APPROVAL ~0.95, ANALYST_UPGRADE ~0.52)
 4. Sentiment: BULLISH, BEARISH, or NEUTRAL
 
 Return ONLY a JSON array:
@@ -379,7 +465,7 @@ Return ONLY a JSON array:
         "index": 0,
         "tickers": ["NVDA", "AMD"],
         "event_type": "EARNINGS_BEAT",
-        "impact_score": 0.7,
+        "impact_score": 0.65,
         "sentiment": "BULLISH"
     }}
 ]

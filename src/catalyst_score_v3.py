@@ -35,75 +35,96 @@ logger = get_logger("CATALYST_V3")
 class CatalystType(Enum):
     """
     Catalyst types ordered by typical impact on small-cap stocks.
-    Weights based on historical analysis of price reactions.
+    UNIFIED TAXONOMY V6 - Aligned with nlp_event_parser and news_flow_screener.
     """
-    # Tier 1: Highest Impact (0.9-1.0)
+    # Tier 1: Critical Impact (0.90-1.00)
     FDA_APPROVAL = "fda_approval"
+    PDUFA_DECISION = "pdufa_decision"
     BUYOUT_CONFIRMED = "buyout_confirmed"
-    MAJOR_PARTNERSHIP = "major_partnership"
 
     # Tier 2: High Impact (0.75-0.89)
     FDA_TRIAL_POSITIVE = "fda_trial_positive"
+    BREAKTHROUGH_DESIGNATION = "breakthrough_designation"
+    FDA_FAST_TRACK = "fda_fast_track"
+    MERGER_ACQUISITION = "merger_acquisition"
     EARNINGS_BEAT_BIG = "earnings_beat_big"
-    MERGER_ANNOUNCEMENT = "merger_announcement"
     MAJOR_CONTRACT = "major_contract"
-    GUIDANCE_RAISE = "guidance_raise"
+    MAJOR_PARTNERSHIP = "major_partnership"
 
-    # Tier 3: Medium Impact (0.5-0.74)
-    ANALYST_UPGRADE = "analyst_upgrade"
+    # Tier 3: Medium-High Impact (0.60-0.74)
+    GUIDANCE_RAISE = "guidance_raise"
     EARNINGS_BEAT = "earnings_beat"
+    PARTNERSHIP = "partnership"
+    PRICE_TARGET_RAISE = "price_target_raise"
     NEW_PRODUCT = "new_product"
     PATENT_GRANTED = "patent_granted"
     INSIDER_BUYING = "insider_buying"
 
-    # Tier 4: Lower Impact (0.3-0.49)
+    # Tier 4: Medium Impact (0.45-0.59)
+    ANALYST_UPGRADE = "analyst_upgrade"
+    SHORT_SQUEEZE_SIGNAL = "short_squeeze_signal"
+    UNUSUAL_VOLUME_NEWS = "unusual_volume_news"
     CONFERENCE_PRESENTATION = "conference_presentation"
     STOCK_BUYBACK = "stock_buyback"
+
+    # Tier 5: Speculative (0.30-0.44)
+    BUYOUT_RUMOR = "buyout_rumor"
+    SOCIAL_MEDIA_SURGE = "social_media_surge"
+    BREAKING_POSITIVE = "breaking_positive"
+    FDA_SPECULATION = "fda_speculation"
+
+    # Legacy/Other
     DIVIDEND_INCREASE = "dividend_increase"
     MANAGEMENT_CHANGE = "management_change"
-
-    # Tier 5: Speculative (0.2-0.29)
-    BUYOUT_RUMOR = "buyout_rumor"
-    FDA_SPECULATION = "fda_speculation"
-    SOCIAL_MOMENTUM = "social_momentum"
-
-    # Unknown/Other
+    SOCIAL_MOMENTUM = "social_momentum"  # Legacy alias for SOCIAL_MEDIA_SURGE
+    MERGER_ANNOUNCEMENT = "merger_announcement"  # Legacy alias for MERGER_ACQUISITION
     UNKNOWN = "unknown"
 
 
 # Catalyst type weights (impact multiplier)
+# UNIFIED TAXONOMY V6 - Consistent with all scoring modules
 CATALYST_TYPE_WEIGHTS: Dict[CatalystType, float] = {
-    # Tier 1: Highest Impact
+    # Tier 1: Critical Impact (0.90-1.00)
     CatalystType.FDA_APPROVAL: 1.0,
-    CatalystType.BUYOUT_CONFIRMED: 0.95,
-    CatalystType.MAJOR_PARTNERSHIP: 0.90,
+    CatalystType.PDUFA_DECISION: 0.95,
+    CatalystType.BUYOUT_CONFIRMED: 0.92,
 
-    # Tier 2: High Impact
-    CatalystType.FDA_TRIAL_POSITIVE: 0.85,
+    # Tier 2: High Impact (0.75-0.89)
+    CatalystType.FDA_TRIAL_POSITIVE: 0.88,
+    CatalystType.BREAKTHROUGH_DESIGNATION: 0.85,
+    CatalystType.FDA_FAST_TRACK: 0.82,
+    CatalystType.MERGER_ACQUISITION: 0.88,
     CatalystType.EARNINGS_BEAT_BIG: 0.85,
-    CatalystType.MERGER_ANNOUNCEMENT: 0.82,
     CatalystType.MAJOR_CONTRACT: 0.80,
-    CatalystType.GUIDANCE_RAISE: 0.78,
+    CatalystType.MAJOR_PARTNERSHIP: 0.78,
 
-    # Tier 3: Medium Impact
-    CatalystType.ANALYST_UPGRADE: 0.70,
-    CatalystType.EARNINGS_BEAT: 0.65,
-    CatalystType.NEW_PRODUCT: 0.62,
+    # Tier 3: Medium-High Impact (0.60-0.74)
+    CatalystType.GUIDANCE_RAISE: 0.72,
+    CatalystType.EARNINGS_BEAT: 0.68,
+    CatalystType.PARTNERSHIP: 0.65,
+    CatalystType.PRICE_TARGET_RAISE: 0.62,
+    CatalystType.NEW_PRODUCT: 0.60,
     CatalystType.PATENT_GRANTED: 0.58,
     CatalystType.INSIDER_BUYING: 0.55,
 
-    # Tier 4: Lower Impact
+    # Tier 4: Medium Impact (0.45-0.59)
+    CatalystType.ANALYST_UPGRADE: 0.55,
+    CatalystType.SHORT_SQUEEZE_SIGNAL: 0.52,
+    CatalystType.UNUSUAL_VOLUME_NEWS: 0.48,
     CatalystType.CONFERENCE_PRESENTATION: 0.45,
     CatalystType.STOCK_BUYBACK: 0.42,
+
+    # Tier 5: Speculative (0.30-0.44)
+    CatalystType.BUYOUT_RUMOR: 0.42,
+    CatalystType.SOCIAL_MEDIA_SURGE: 0.38,
+    CatalystType.BREAKING_POSITIVE: 0.35,
+    CatalystType.FDA_SPECULATION: 0.32,
+
+    # Legacy/Other
     CatalystType.DIVIDEND_INCREASE: 0.40,
     CatalystType.MANAGEMENT_CHANGE: 0.35,
-
-    # Tier 5: Speculative
-    CatalystType.BUYOUT_RUMOR: 0.28,
-    CatalystType.FDA_SPECULATION: 0.25,
-    CatalystType.SOCIAL_MOMENTUM: 0.22,
-
-    # Unknown
+    CatalystType.SOCIAL_MOMENTUM: 0.38,  # Alias
+    CatalystType.MERGER_ANNOUNCEMENT: 0.88,  # Alias
     CatalystType.UNKNOWN: 0.30,
 }
 
@@ -153,31 +174,51 @@ class Catalyst:
             self.source = self._parse_source(self.source)
 
     def _parse_catalyst_type(self, type_str: str) -> CatalystType:
-        """Parse string to CatalystType enum"""
+        """Parse string to CatalystType enum - UNIFIED TAXONOMY V6"""
         type_map = {
+            # Tier 1: Critical
             "fda_approval": CatalystType.FDA_APPROVAL,
-            "fda_trial_result": CatalystType.FDA_TRIAL_POSITIVE,
-            "fda_trial_positive": CatalystType.FDA_TRIAL_POSITIVE,
-            "merger_acquisition": CatalystType.MERGER_ANNOUNCEMENT,
-            "merger_announcement": CatalystType.MERGER_ANNOUNCEMENT,
-            "earnings_beat": CatalystType.EARNINGS_BEAT,
-            "earnings_beat_big": CatalystType.EARNINGS_BEAT_BIG,
-            "analyst_upgrade": CatalystType.ANALYST_UPGRADE,
-            "major_contract": CatalystType.MAJOR_CONTRACT,
-            "partnership": CatalystType.MAJOR_PARTNERSHIP,
-            "major_partnership": CatalystType.MAJOR_PARTNERSHIP,
-            "guidance_raise": CatalystType.GUIDANCE_RAISE,
-            "buyout_rumor": CatalystType.BUYOUT_RUMOR,
+            "pdufa_decision": CatalystType.PDUFA_DECISION,
             "buyout_confirmed": CatalystType.BUYOUT_CONFIRMED,
+
+            # Tier 2: High
+            "fda_trial_positive": CatalystType.FDA_TRIAL_POSITIVE,
+            "fda_trial_result": CatalystType.FDA_TRIAL_POSITIVE,  # Legacy alias
+            "breakthrough_designation": CatalystType.BREAKTHROUGH_DESIGNATION,
+            "fda_fast_track": CatalystType.FDA_FAST_TRACK,
+            "merger_acquisition": CatalystType.MERGER_ACQUISITION,
+            "merger_announcement": CatalystType.MERGER_ACQUISITION,  # Legacy alias
+            "earnings_beat_big": CatalystType.EARNINGS_BEAT_BIG,
+            "major_contract": CatalystType.MAJOR_CONTRACT,
+            "major_partnership": CatalystType.MAJOR_PARTNERSHIP,
+
+            # Tier 3: Medium-High
+            "guidance_raise": CatalystType.GUIDANCE_RAISE,
+            "earnings_beat": CatalystType.EARNINGS_BEAT,
+            "partnership": CatalystType.PARTNERSHIP,
+            "price_target_raise": CatalystType.PRICE_TARGET_RAISE,
             "new_product": CatalystType.NEW_PRODUCT,
             "patent_granted": CatalystType.PATENT_GRANTED,
             "insider_buying": CatalystType.INSIDER_BUYING,
+
+            # Tier 4: Medium
+            "analyst_upgrade": CatalystType.ANALYST_UPGRADE,
+            "short_squeeze_signal": CatalystType.SHORT_SQUEEZE_SIGNAL,
+            "short_squeeze": CatalystType.SHORT_SQUEEZE_SIGNAL,  # Legacy alias
+            "unusual_volume_news": CatalystType.UNUSUAL_VOLUME_NEWS,
             "conference_presentation": CatalystType.CONFERENCE_PRESENTATION,
             "stock_buyback": CatalystType.STOCK_BUYBACK,
+
+            # Tier 5: Speculative
+            "buyout_rumor": CatalystType.BUYOUT_RUMOR,
+            "social_media_surge": CatalystType.SOCIAL_MEDIA_SURGE,
+            "social_momentum": CatalystType.SOCIAL_MEDIA_SURGE,  # Legacy alias
+            "breaking_positive": CatalystType.BREAKING_POSITIVE,
+            "fda_speculation": CatalystType.FDA_SPECULATION,
+
+            # Legacy/Other
             "dividend_increase": CatalystType.DIVIDEND_INCREASE,
             "management_change": CatalystType.MANAGEMENT_CHANGE,
-            "fda_speculation": CatalystType.FDA_SPECULATION,
-            "social_momentum": CatalystType.SOCIAL_MOMENTUM,
         }
         return type_map.get(type_str.lower(), CatalystType.UNKNOWN)
 

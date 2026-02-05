@@ -137,21 +137,43 @@ def calculate_probability(event, days_to_event):
     """
     base_probability = 0.5
     
-    # Factor 1: Event type
+    # Factor 1: Event type (aligned with unified taxonomy V6)
     event_type = event.get("type", "")
     type_multipliers = {
-        "earnings": 0.8,
-        "FDA_APPROVAL": 0.9,
+        # TIER 1 - CRITICAL
+        "FDA_APPROVAL": 0.95,
+        "PDUFA_DECISION": 0.92,
+        "BUYOUT_CONFIRMED": 0.90,
+
+        # TIER 2 - HIGH
+        "FDA_TRIAL_POSITIVE": 0.85,
+        "BREAKTHROUGH_DESIGNATION": 0.82,
+        "FDA_FAST_TRACK": 0.80,
         "MERGER_ACQUISITION": 0.85,
-        "EARNINGS_BEAT": 0.9,
-        "MAJOR_CONTRACT": 0.75,
-        "FDA_TRIAL_RESULT": 0.7,
-        "GUIDANCE_RAISE": 0.8,
-        "BUYOUT_RUMOR": 0.7,
-        "ANALYST_UPGRADE": 0.6,
-        "PARTNERSHIP": 0.65
+        "EARNINGS_BEAT_BIG": 0.82,
+        "MAJOR_CONTRACT": 0.78,
+
+        # TIER 3 - MEDIUM-HIGH
+        "GUIDANCE_RAISE": 0.70,
+        "EARNINGS_BEAT": 0.65,
+        "PARTNERSHIP": 0.62,
+        "PRICE_TARGET_RAISE": 0.60,
+
+        # TIER 4 - MEDIUM
+        "ANALYST_UPGRADE": 0.52,
+        "SHORT_SQUEEZE_SIGNAL": 0.55,
+        "UNUSUAL_VOLUME_NEWS": 0.48,
+
+        # TIER 5 - SPECULATIVE
+        "BUYOUT_RUMOR": 0.42,
+        "SOCIAL_MEDIA_SURGE": 0.38,
+        "BREAKING_POSITIVE": 0.35,
+
+        # Legacy mappings (backwards compatibility)
+        "earnings": 0.65,
+        "FDA_TRIAL_RESULT": 0.85,  # Map to FDA_TRIAL_POSITIVE
     }
-    
+
     type_mult = type_multipliers.get(event_type, 0.5)
     
     # Factor 2: Impact score
