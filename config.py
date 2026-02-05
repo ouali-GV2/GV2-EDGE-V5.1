@@ -248,3 +248,23 @@ SOCIAL_BUZZ_SOURCES = ["twitter", "reddit", "stocktwits"]
 # Google Trends - DISABLED by default (pytrends is unreliable)
 # Set to True to enable (may cause rate limiting issues)
 ENABLE_GOOGLE_TRENDS = False
+
+# ============================
+# REPEAT GAINER MEMORY (V6)
+# ============================
+
+ENABLE_REPEAT_GAINER = True           # Enable repeat gainer tracking
+REPEAT_GAINER_LOOKBACK_DAYS = 180     # How far back to look for spikes
+REPEAT_GAINER_MIN_SPIKE_PCT = 20.0    # Minimum gain % to count as spike
+REPEAT_GAINER_DECAY_HALF_LIFE = 30    # Recency decay half-life in days
+REPEAT_GAINER_THRESHOLD = 0.5         # Score threshold for "repeat runner"
+REPEAT_GAINER_MAX_BOOST = 1.5         # Maximum boost multiplier
+
+# ============================
+# MARKET CALENDAR (V6)
+# ============================
+
+# Volume adjustment for comparison
+VOLUME_ADJUST_EARLY_CLOSE = 0.6       # Volume factor for early close days
+VOLUME_ADJUST_FRIDAY = 0.9            # Volume factor for Fridays
+VOLUME_ADJUST_PRE_HOLIDAY = 0.75      # Volume factor for day before holiday

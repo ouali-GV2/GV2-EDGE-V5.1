@@ -1,16 +1,30 @@
-# 📘 GV2-EDGE V5.3 — Developer Documentation
+# 📘 GV2-EDGE V6.0 — Developer Documentation
 
 ## 🎯 Objectif
 
 Ce document explique :
-- L'architecture technique V5.3 (Full Intelligence Integration)
+- L'architecture technique V6.0 (Anticipation Multi-Couches)
 - Le rôle de chaque module
 - Les flux de données et le scoring
 - Comment étendre le système
 
 ---
 
-## 🆕 Changements V5.3
+## 🆕 Changements V6.0
+
+### Nouvelles Couches d'Anticipation
+
+**1. Market Calendar US** (`utils/market_calendar.py`)
+- Gestion complète des jours fériés NYSE (2024-2027)
+- Demi-séances (early close days)
+- Ajustement des volumes pour comparaison
+- Fonctions: `is_trading_day()`, `is_early_close()`, `get_previous_trading_day()`
+
+**2. Repeat Gainer Memory** (`src/repeat_gainer_memory.py`)
+- Tracking historique des top gainers
+- Score de "repeat runner" avec decay temporel
+- Boost multiplicateur pour Monster Score
+- Database SQLite pour persistance
 
 ### Monster Score V3 - Nouveau Système de Poids
 
@@ -26,6 +40,7 @@ ADVANCED_MONSTER_WEIGHTS = {
     "social_buzz": 0.06,    # NEW: Social media buzz
 }
 # Total = 100%
+# + Repeat Gainer Boost (up to 1.5x multiplier)
 ```
 
 ### Options Flow - Changements
@@ -39,12 +54,18 @@ ADVANCED_MONSTER_WEIGHTS = {
 
 ---
 
-## 🧱 Architecture V5.1
+## 🧱 Architecture V6.0
 
 ```
 main.py
 │
-├── 🎯 ANTICIPATION ENGINE (NEW V5)
+├── 📅 MARKET CALENDAR (NEW V6)
+│   └── utils/market_calendar.py      # NYSE holidays, early closes
+│
+├── 🔁 REPEAT GAINER MEMORY (NEW V6)
+│   └── src/repeat_gainer_memory.py   # Historical spike tracking
+│
+├── 🎯 ANTICIPATION ENGINE (V5)
 │   ├── src/anticipation_engine.py      # Orchestrateur principal
 │   ├── src/news_flow_screener.py       # NEWS → NLP → Tickers
 │   ├── src/options_flow_ibkr.py        # Options via OPRA L1
@@ -352,5 +373,5 @@ Output (Telegram + SQLite + Dashboard)
 
 ---
 
-**Version:** 5.3.1
+**Version:** 6.0.0
 **Last Updated:** 2026-02-05
