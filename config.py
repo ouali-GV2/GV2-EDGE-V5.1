@@ -268,3 +268,27 @@ REPEAT_GAINER_MAX_BOOST = 1.5         # Maximum boost multiplier
 VOLUME_ADJUST_EARLY_CLOSE = 0.6       # Volume factor for early close days
 VOLUME_ADJUST_FRIDAY = 0.9            # Volume factor for Fridays
 VOLUME_ADJUST_PRE_HOLIDAY = 0.75      # Volume factor for day before holiday
+
+# ============================
+# PRE-SPIKE RADAR (V6)
+# ============================
+
+ENABLE_PRE_SPIKE_RADAR = True         # Enable pre-spike detection
+
+# Acceleration thresholds (0-1)
+PRE_SPIKE_VOLUME_THRESHOLD = 0.3      # Min volume acceleration
+PRE_SPIKE_OPTIONS_THRESHOLD = 0.25    # Min options acceleration
+PRE_SPIKE_BUZZ_THRESHOLD = 0.2        # Min buzz acceleration
+PRE_SPIKE_SQUEEZE_THRESHOLD = 0.4     # Min technical compression
+
+# Confluence settings
+PRE_SPIKE_MIN_CONFLUENCE_WATCH = 2    # Signals needed for WATCH alert
+PRE_SPIKE_MIN_CONFLUENCE_HIGH = 3     # Signals needed for HIGH alert
+PRE_SPIKE_MIN_PROBABILITY = 0.4       # Min probability for high-priority list
+
+# Time windows
+PRE_SPIKE_WINDOW_MINUTES = 30         # Window for acceleration calculation
+PRE_SPIKE_LOOKBACK_PERIODS = 6        # Number of periods to analyze
+
+# Boost settings
+PRE_SPIKE_MAX_BOOST = 1.4             # Maximum boost multiplier for Monster Score

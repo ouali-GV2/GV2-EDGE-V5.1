@@ -26,6 +26,13 @@ Ce document explique :
 - Boost multiplicateur pour Monster Score
 - Database SQLite pour persistance
 
+**3. Pre-Spike Radar** (`src/pre_spike_radar.py`)
+- Détection d'accélération AVANT le spike (pas le niveau, la dérivée)
+- 4 signaux: Volume, Options, Buzz, Technical compression
+- Confluence scoring: plus de signaux = plus haute probabilité
+- Alert levels: NONE → WATCH → ELEVATED → HIGH
+- Boost anticipatif pour Monster Score (jusqu'à 1.4x)
+
 ### Monster Score V3 - Nouveau Système de Poids
 
 ```python
@@ -64,6 +71,13 @@ main.py
 │
 ├── 🔁 REPEAT GAINER MEMORY (NEW V6)
 │   └── src/repeat_gainer_memory.py   # Historical spike tracking
+│
+├── ⚡ PRE-SPIKE RADAR (NEW V6)
+│   └── src/pre_spike_radar.py        # Acceleration detection before spike
+│       ├── Volume acceleration       # Derivative of volume (not level)
+│       ├── Options acceleration      # Call momentum increasing
+│       ├── Buzz acceleration         # Social mentions picking up
+│       └── Technical compression     # Squeeze before breakout
 │
 ├── 🎯 ANTICIPATION ENGINE (V5)
 │   ├── src/anticipation_engine.py      # Orchestrateur principal
