@@ -238,4 +238,13 @@ OPTIONS_FLOW_MIN_TOTAL = 10000    # Minimum total options volume
 ENABLE_SOCIAL_BUZZ = True                # Enable social sentiment tracking
 SOCIAL_BUZZ_LOOKBACK_HOURS = 24          # Hours to look back for buzz
 SOCIAL_BUZZ_SPIKE_THRESHOLD = 3.0        # 3x normal = spike
-SOCIAL_BUZZ_SOURCES = ["twitter", "reddit", "stocktwits"]  # All sources enabled
+
+# Active sources and weights (total = 100%)
+# Twitter/X (via Grok): 45% - Real-time, institutional leaks
+# Reddit (WSB + others): 30% - Retail sentiment, meme stocks
+# StockTwits: 25% - Dedicated stock traders
+SOCIAL_BUZZ_SOURCES = ["twitter", "reddit", "stocktwits"]
+
+# Google Trends - DISABLED by default (pytrends is unreliable)
+# Set to True to enable (may cause rate limiting issues)
+ENABLE_GOOGLE_TRENDS = False

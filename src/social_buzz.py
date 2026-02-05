@@ -372,59 +372,72 @@ def get_stocktwits_buzz(ticker):
 
 
 # ============================
-# 4. Google Trends
+# 4. Google Trends (DISABLED)
 # ============================
+# Google Trends via pytrends is unreliable due to rate limiting.
+# Disabled by default. Enable via ENABLE_GOOGLE_TRENDS=True in config.
 
 def get_google_trends_score(ticker):
     """
-    Get Google Trends interest score
-    
-    Uses pytrends library (free Google Trends API)
-    
+    Get Google Trends interest score (DISABLED BY DEFAULT)
+
+    Uses pytrends library which is unreliable due to Google rate limiting.
+    Returns 0 when disabled.
+
     Args:
         ticker: Stock symbol
-    
+
     Returns:
-        Interest score (0-100)
+        Interest score (0-100) or 0 if disabled
     """
+    # Import config to check if enabled
+    try:
+        from config import ENABLE_GOOGLE_TRENDS
+    except ImportError:
+        ENABLE_GOOGLE_TRENDS = False
+
+    # Return 0 if disabled (default)
+    if not ENABLE_GOOGLE_TRENDS:
+        return {"interest": 0, "source": "google_trends_disabled"}
+
     cache_key = f"google_trends_{ticker}"
     cached = cache.get(cache_key)
-    
+
     if cached:
         return cached
-    
+
     try:
         from pytrends.request import TrendReq
-        
+
         # Initialize pytrends
         pytrends = TrendReq(hl='en-US', tz=360)
-        
+
         # Build search term (ticker + stock)
         search_term = f"{ticker} stock"
-        
+
         # Get interest over last 7 days
         pytrends.build_payload([search_term], timeframe='now 7-d')
-        
+
         # Get interest over time
         interest_df = pytrends.interest_over_time()
-        
+
         if interest_df.empty:
             return {"interest": 0, "source": "google_trends"}
-        
+
         # Get average interest
         avg_interest = interest_df[search_term].mean()
-        
+
         result = {
             "interest": int(avg_interest),
             "source": "google_trends"
         }
-        
+
         cache.set(cache_key, result)
-        
+
         logger.info(f"{ticker} Google Trends: {avg_interest:.0f}")
-        
+
         return result
-    
+
     except Exception as e:
         logger.warning(f"Google Trends failed for {ticker}: {e}")
         return {"interest": 0, "source": "google_trends"}
@@ -437,54 +450,66 @@ def get_google_trends_score(ticker):
 def get_total_buzz_score(ticker):
     """
     Aggregate buzz from all sources
-    
+
     Normalized score 0-1:
     - 0 = no buzz
     - 0.5 = normal buzz
     - 1.0 = viral/trending
-    
+
+    Sources & Weights (Google Trends DISABLED):
+    - Twitter/X (via Grok): 45% - Most real-time, institutional leaks
+    - Reddit (WSB + others): 30% - Retail sentiment, meme potential
+    - StockTwits: 25% - Dedicated stock community
+
     Args:
         ticker: Stock symbol
-    
+
     Returns:
         Aggregated buzz score
     """
-    # Get data from all sources
+    # Get data from active sources
     twitter = get_twitter_buzz_grok(ticker, hours_back=24)
     reddit = get_reddit_wsb_buzz(ticker)
     stocktwits = get_stocktwits_buzz(ticker)
-    google = get_google_trends_score(ticker)
-    
+
     # Normalize each source (rough thresholds)
     twitter_score = min(1.0, twitter.get("mentions", 0) / 100)  # 100 mentions = max
     reddit_score = min(1.0, reddit.get("mentions", 0) / 10)     # 10 mentions = max
     stocktwits_score = min(1.0, stocktwits.get("messages", 0) / 30)  # 30 messages = max
-    google_score = google.get("interest", 0) / 100  # Already 0-100
-    
-    # Weighted average
+
+    # Weighted average (redistributed from Google Trends)
+    # Old: Twitter 35%, Reddit 25%, StockTwits 20%, Google 20%
+    # New: Twitter 45%, Reddit 30%, StockTwits 25%, Google 0%
     total_score = (
-        twitter_score * 0.35 +      # Twitter most important
-        reddit_score * 0.25 +       # WSB influential
-        stocktwits_score * 0.20 +   # StockTwits niche but useful
-        google_score * 0.20         # Google Trends = mainstream interest
+        twitter_score * 0.45 +      # Twitter/X most important (real-time)
+        reddit_score * 0.30 +       # Reddit influential (retail + memes)
+        stocktwits_score * 0.25     # StockTwits (dedicated traders)
     )
-    
-    # Trending boost
+
+    # Sentiment boost from Reddit/StockTwits
+    reddit_sentiment = reddit.get("sentiment_ratio", 1.0)
+    stocktwits_sentiment = stocktwits.get("sentiment_ratio", 1.0)
+
+    if reddit_sentiment > 2.0 or stocktwits_sentiment > 2.0:
+        total_score *= 1.15  # 15% boost if strongly bullish
+
+    # Trending boost (Twitter)
     if twitter.get("trending", False):
         total_score *= 1.3  # 30% boost if trending
-    
+
     # Clamp 0-1
     total_score = max(0, min(1, total_score))
-    
+
     logger.info(f"{ticker} total buzz score: {total_score:.2f}")
-    
+
     return {
         "ticker": ticker,
         "buzz_score": total_score,
         "twitter_mentions": twitter.get("mentions", 0),
         "reddit_mentions": reddit.get("mentions", 0),
+        "reddit_sentiment": reddit.get("sentiment_ratio", 1.0),
         "stocktwits_messages": stocktwits.get("messages", 0),
-        "google_interest": google.get("interest", 0),
+        "stocktwits_sentiment": stocktwits.get("sentiment_ratio", 1.0),
         "trending": twitter.get("trending", False)
     }
 
@@ -540,18 +565,21 @@ def get_buzz_signal(ticker):
 if __name__ == "__main__":
     print("\n📱 SOCIAL BUZZ TRACKER TEST")
     print("=" * 60)
-    
+    print("Sources: Twitter/X (45%), Reddit (30%), StockTwits (25%)")
+    print("Google Trends: DISABLED")
+    print("=" * 60)
+
     test_tickers = ["AAPL", "TSLA", "GME"]
-    
+
     for ticker in test_tickers:
         print(f"\n{ticker}:")
-        
+
         buzz = get_buzz_signal(ticker)
-        
+
         print(f"  Buzz Score: {buzz['buzz_score']:.2f}")
-        print(f"  Twitter: {buzz['twitter_mentions']}")
-        print(f"  Reddit: {buzz['reddit_mentions']}")
-        print(f"  StockTwits: {buzz['stocktwits_messages']}")
-        print(f"  Google: {buzz['google_interest']}")
+        print(f"  Twitter: {buzz['twitter_mentions']} mentions")
+        print(f"  Reddit: {buzz['reddit_mentions']} mentions (sentiment: {buzz.get('reddit_sentiment', 1.0):.1f})")
+        print(f"  StockTwits: {buzz['stocktwits_messages']} msgs (sentiment: {buzz.get('stocktwits_sentiment', 1.0):.1f})")
         print(f"  Trending: {buzz['trending']}")
         print(f"  Spike: {buzz['spike_detected']}")
+        print(f"  Signal: {buzz['signal']}")
