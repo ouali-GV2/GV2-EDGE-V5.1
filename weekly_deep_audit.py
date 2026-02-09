@@ -1,6 +1,6 @@
 """
-WEEKLY DEEP AUDIT V2 - Advanced Performance Analysis
-====================================================
+WEEKLY DEEP AUDIT V6.0 - Advanced Performance Analysis
+======================================================
 
 Analyse complète de la performance du système:
 - Hit rate (% de top gainers détectés)
@@ -9,12 +9,20 @@ Analyse complète de la performance du système:
 - Miss analysis (pourquoi certains movers sont manqués)
 - Auto-tuning recommendations
 
+V6 Enhancements:
+- Catalyst Score V3 trend analysis
+- Pre-Spike Radar hit correlation
+- Repeat Gainer Memory performance tracking
+- NLP Enrichi accuracy measurement
+- Weekly V6 module comparison
+
 Cette version compare les signaux AVANT vs les movers APRÈS.
 """
 
 import os
 import json
 from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional
 
 import pandas as pd
 import numpy as np
@@ -24,10 +32,30 @@ from utils.api_guard import safe_get
 
 from src.universe_loader import load_universe
 from src.signal_logger import get_signals_for_period, get_signal_by_ticker_and_date
+from alerts.telegram_alerts import send_weekly_audit_alert
 
 from config import FINNHUB_API_KEY
 
-logger = get_logger("WEEKLY_AUDIT_V2")
+# V6 Module imports (optional)
+try:
+    from src.catalyst_score_v3 import CatalystScoreV3
+    HAS_CATALYST_V3 = True
+except ImportError:
+    HAS_CATALYST_V3 = False
+
+try:
+    from src.pre_spike_radar import PreSpikeRadar
+    HAS_PRE_SPIKE = True
+except ImportError:
+    HAS_PRE_SPIKE = False
+
+try:
+    from src.repeat_gainer_memory import RepeatGainerMemory
+    HAS_REPEAT_GAINER = True
+except ImportError:
+    HAS_REPEAT_GAINER = False
+
+logger = get_logger("WEEKLY_AUDIT_V6")
 
 os.makedirs("data/audit_reports", exist_ok=True)
 
