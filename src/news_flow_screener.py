@@ -1,32 +1,26 @@
 """
-NEWS FLOW SCREENER - Global News → Ticker Mapping
-==================================================
+NEWS FLOW SCREENER V6.1 - Global News → Ticker Mapping
+=======================================================
 
-Architecture inversée pour détection anticipative:
+Architecture inversee pour detection anticipative:
 
 AVANT (inefficace):
     Pour chaque ticker → chercher ses news → analyser
-    Problème: 500 tickers × API calls = lent + rate limits
+    Probleme: 500 tickers × API calls = lent + rate limits
 
-MAINTENANT (efficace):
-    1. Fetch ALL breaking news (market-wide)
-    2. NLP filter: garder seulement news à fort impact potentiel
-    3. Extract tickers mentionnés
-    4. Filter: garder seulement small caps US <$2B
-    5. Output: {ticker: [events]} prêt pour scoring
+MAINTENANT V6.1 (efficace + 100% sources reelles):
+    1. Fetch ALL breaking news via V6.1 Ingestors
+       - SEC EDGAR 8-K (FREE)
+       - Finnhub general news (FREE)
+    2. Keyword filter (fast, NO LLM)
+    3. Extract tickers mentionnes
+    4. NLP classification via Grok (EVENT_TYPE only)
+    5. Output: {ticker: [events]} pret pour scoring
 
-Sources:
-- Polygon (via Grok): news ticker-specific + market-wide
-- Finnhub: company news + market news
-- SEC EDGAR: 8-K filings (material events)
-
-Impact keywords for filtering:
-- FDA, approval, trial, phase, breakthrough
-- Earnings, beat, miss, guidance, revenue
-- Merger, acquisition, buyout, takeover
-- Contract, partnership, deal, agreement
-- Upgrade, downgrade, price target
-- Short squeeze, gamma, options
+IMPORTANT V6.1:
+- NO Polygon-via-Grok simulation
+- Grok = NLP classification ONLY
+- 100% real data sources
 """
 
 import re
@@ -39,144 +33,66 @@ from collections import defaultdict
 
 from utils.logger import get_logger
 from utils.cache import Cache
-from utils.api_guard import safe_get, safe_post
+
+# V6.1 Ingestors (real sources)
+from src.ingestors.global_news_ingestor import GlobalNewsIngestor, get_global_ingestor
+from src.ingestors.sec_filings_ingestor import SECIngestor
+
+# V6.1 Processors
+from src.processors.keyword_filter import get_keyword_filter, FilterPriority
+from src.processors.ticker_extractor import get_ticker_extractor
+from src.processors.nlp_classifier import get_classifier, classify_news
+
 from config import GROK_API_KEY, FINNHUB_API_KEY
 
-logger = get_logger("NEWS_FLOW_SCREENER")
+logger = get_logger("NEWS_FLOW_SCREENER_V6")
 
-# Cache pour éviter doublons
+# Cache pour eviter doublons
 news_cache = Cache(ttl=900)  # 15 min
 
-# Keywords pour filtrer les news à fort impact
-BULLISH_KEYWORDS = [
-    # FDA / Biotech
-    'fda', 'approval', 'approved', 'clearance', 'breakthrough', 'designation',
-    'trial', 'phase 3', 'phase iii', 'positive', 'efficacy', 'endpoint',
-    'pdufa', 'nda', 'bla', 'eua',
-    
-    # Earnings
-    'beat', 'beats', 'exceeded', 'surpass', 'record revenue', 'record earnings',
-    'guidance raise', 'raises guidance', 'upside', 'outperform',
-    
-    # M&A
-    'acquisition', 'acquire', 'merger', 'buyout', 'takeover', 'bid',
-    'offer', 'deal', 'transaction',
-    
-    # Contracts
-    'contract', 'award', 'partnership', 'agreement', 'collaboration',
-    'license', 'milestone', 'order',
-    
-    # Analyst
-    'upgrade', 'price target', 'buy rating', 'outperform',
-    
-    # Squeeze / Options
-    'short squeeze', 'gamma', 'options activity', 'unusual volume',
-    
-    # General positive
-    'surge', 'soar', 'jump', 'spike', 'rally', 'breakout'
-]
-
-# Keywords négatifs (à éviter ou inverser)
-BEARISH_KEYWORDS = [
-    'downgrade', 'miss', 'below', 'guidance cut', 'warning',
-    'reject', 'fail', 'negative', 'decline', 'drop', 'plunge',
-    'bankruptcy', 'default', 'dilution', 'offering'
-]
 
 # ============================
 # EVENT TYPES - UNIFIED TAXONOMY V6
 # ============================
-# Aligned with nlp_event_parser.py and catalyst_score_v3.py
-# Impact scores reflect real small-cap movement potential
 
 EVENT_TYPES = {
     # TIER 1 - CRITICAL (0.90-1.00)
-    'FDA_APPROVAL': {
-        'keywords': ['fda approval', 'fda approved', 'fda clears', 'fda clearance'],
-        'base_impact': 0.95
-    },
-    'PDUFA_DECISION': {
-        'keywords': ['pdufa', 'fda decision', 'fda accepts'],
-        'base_impact': 0.92
-    },
-    'BUYOUT_CONFIRMED': {
-        'keywords': ['acquired by', 'to be acquired', 'buyout announced', 'acquisition complete'],
-        'base_impact': 0.90
-    },
+    'FDA_APPROVAL': {'base_impact': 0.95},
+    'PDUFA_DECISION': {'base_impact': 0.92},
+    'BUYOUT_CONFIRMED': {'base_impact': 0.90},
 
     # TIER 2 - HIGH (0.75-0.89)
-    'FDA_TRIAL_POSITIVE': {
-        'keywords': ['phase 3', 'phase iii', 'met endpoint', 'positive results', 'trial success', 'efficacy'],
-        'base_impact': 0.85
-    },
-    'BREAKTHROUGH_DESIGNATION': {
-        'keywords': ['breakthrough therapy', 'breakthrough designation'],
-        'base_impact': 0.82
-    },
-    'FDA_FAST_TRACK': {
-        'keywords': ['fast track', 'fast-track', 'accelerated approval'],
-        'base_impact': 0.80
-    },
-    'MERGER_ACQUISITION': {
-        'keywords': ['merger', 'acquisition', 'takeover', 'buyout offer', 'm&a'],
-        'base_impact': 0.85
-    },
-    'EARNINGS_BEAT_BIG': {
-        'keywords': ['blowout earnings', 'crushed estimates', 'massive beat', 'record earnings'],
-        'base_impact': 0.82
-    },
-    'MAJOR_CONTRACT': {
-        'keywords': ['major contract', 'billion contract', 'million contract', 'government contract', 'defense contract'],
-        'base_impact': 0.78
-    },
+    'FDA_TRIAL_POSITIVE': {'base_impact': 0.85},
+    'BREAKTHROUGH_DESIGNATION': {'base_impact': 0.82},
+    'FDA_FAST_TRACK': {'base_impact': 0.80},
+    'MERGER_ACQUISITION': {'base_impact': 0.85},
+    'EARNINGS_BEAT_BIG': {'base_impact': 0.82},
+    'MAJOR_CONTRACT': {'base_impact': 0.78},
 
     # TIER 3 - MEDIUM-HIGH (0.60-0.74)
-    'GUIDANCE_RAISE': {
-        'keywords': ['raises guidance', 'raised outlook', 'upward revision', 'increased forecast'],
-        'base_impact': 0.70
-    },
-    'EARNINGS_BEAT': {
-        'keywords': ['beat', 'beats', 'exceeded', 'surpassed', 'topped estimates'],
-        'base_impact': 0.65
-    },
-    'PARTNERSHIP': {
-        'keywords': ['partnership', 'collaboration', 'strategic agreement', 'joint venture', 'alliance'],
-        'base_impact': 0.62
-    },
-    'PRICE_TARGET_RAISE': {
-        'keywords': ['price target raised', 'raises price target', 'new price target', 'target to'],
-        'base_impact': 0.60
-    },
+    'GUIDANCE_RAISE': {'base_impact': 0.70},
+    'EARNINGS_BEAT': {'base_impact': 0.65},
+    'PARTNERSHIP': {'base_impact': 0.62},
+    'PRICE_TARGET_RAISE': {'base_impact': 0.60},
 
     # TIER 4 - MEDIUM (0.45-0.59)
-    'ANALYST_UPGRADE': {
-        'keywords': ['upgrade', 'upgraded', 'buy rating', 'outperform'],
-        'base_impact': 0.52
-    },
-    'SHORT_SQUEEZE_SIGNAL': {
-        'keywords': ['short squeeze', 'gamma squeeze', 'heavily shorted', 'short interest'],
-        'base_impact': 0.55
-    },
-    'UNUSUAL_VOLUME_NEWS': {
-        'keywords': ['unusual volume', 'volume spike', 'heavy trading'],
-        'base_impact': 0.48
-    },
+    'ANALYST_UPGRADE': {'base_impact': 0.52},
+    'SHORT_SQUEEZE_SIGNAL': {'base_impact': 0.55},
+    'UNUSUAL_VOLUME_NEWS': {'base_impact': 0.48},
 
     # TIER 5 - SPECULATIVE (0.30-0.44)
-    'BUYOUT_RUMOR': {
-        'keywords': ['buyout rumor', 'acquisition rumor', 'takeover speculation', 'potential buyer'],
-        'base_impact': 0.42
-    },
-    'SOCIAL_MEDIA_SURGE': {
-        'keywords': ['wallstreetbets', 'wsb', 'reddit', 'trending', 'meme stock', 'viral'],
-        'base_impact': 0.38
-    },
-    'BREAKING_POSITIVE': {
-        'keywords': ['surge', 'soar', 'spike', 'rally', 'breakout'],
-        'base_impact': 0.35
-    }
+    'BUYOUT_RUMOR': {'base_impact': 0.42},
+    'SOCIAL_MEDIA_SURGE': {'base_impact': 0.38},
+    'BREAKING_POSITIVE': {'base_impact': 0.35},
+
+    # Fallback
+    'NONE': {'base_impact': 0.0}
 }
 
+
+# ============================
+# DATA CLASSES
+# ============================
 
 @dataclass
 class NewsEvent:
@@ -190,9 +106,10 @@ class NewsEvent:
     source: str
     published_at: str
     url: Optional[str] = None
+    tier: int = 5
 
 
-@dataclass 
+@dataclass
 class TickerEvents:
     """All events for a single ticker"""
     ticker: str
@@ -203,336 +120,142 @@ class TickerEvents:
 
 
 # ============================
-# NEWS FETCHING
+# V6.1 NEWS FETCHING (REAL SOURCES ONLY)
 # ============================
 
-def fetch_polygon_news_global(hours_back: int = 6) -> List[Dict]:
+async def fetch_news_v6(universe_tickers: Set[str], hours_back: int = 6) -> List[Dict]:
     """
-    Fetch market-wide news from Polygon via Grok
-    
-    Returns raw news items for processing
-    """
-    logger.info(f"Fetching Polygon news (last {hours_back}h)...")
-    
-    prompt = f"""Execute this Python code to fetch recent market news from Polygon:
+    Fetch news from V6.1 real sources
 
-```python
-from polygon import RESTClient
-from datetime import datetime, timedelta
-
-client = RESTClient()
-
-# Get news from last {hours_back} hours
-cutoff = (datetime.utcnow() - timedelta(hours={hours_back})).strftime('%Y-%m-%dT%H:%M:%SZ')
-
-# Fetch market-wide news (no ticker filter)
-news = list(client.list_ticker_news(
-    limit=100,
-    order='desc',
-    sort='published_utc',
-    published_utc_gte=cutoff
-))
-
-results = []
-for n in news:
-    results.append({{
-        'title': n.title,
-        'tickers': n.tickers if hasattr(n, 'tickers') else [],
-        'published': str(n.published_utc),
-        'url': n.article_url if hasattr(n, 'article_url') else '',
-        'keywords': n.keywords if hasattr(n, 'keywords') else [],
-        'description': n.description if hasattr(n, 'description') else ''
-    }})
-
-print(results)
-```
-
-Return ONLY the raw Python list output, no other text."""
-
-    try:
-        payload = {
-            "model": "grok-4-1-fast-reasoning",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.1
-        }
-        
-        headers = {
-            "Authorization": f"Bearer {GROK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        r = safe_post(
-            "https://api.x.ai/v1/chat/completions",
-            json=payload,
-            headers=headers,
-            timeout=60
-        )
-        
-        data = r.json()
-        content = data["choices"][0]["message"]["content"]
-        
-        # Parse the list from response
-        list_match = re.search(r'\[.*\]', content, re.DOTALL)
-        if list_match:
-            news_list = json.loads(list_match.group())
-            logger.info(f"Polygon: fetched {len(news_list)} news items")
-            return news_list
-        
-        return []
-        
-    except Exception as e:
-        logger.error(f"Polygon news fetch failed: {e}")
-        return []
-
-
-def fetch_finnhub_general_news() -> List[Dict]:
-    """
-    Fetch general market news from Finnhub
-    """
-    logger.info("Fetching Finnhub general news...")
-    
-    try:
-        url = "https://finnhub.io/api/v1/news"
-        params = {
-            "category": "general",
-            "token": FINNHUB_API_KEY
-        }
-        
-        r = safe_get(url, params=params, timeout=10)
-        news = r.json()
-        
-        results = []
-        for n in news[:50]:  # Limit to 50 most recent
-            results.append({
-                'title': n.get('headline', ''),
-                'tickers': [],  # Finnhub general news doesn't include tickers
-                'published': datetime.fromtimestamp(n.get('datetime', 0)).isoformat(),
-                'url': n.get('url', ''),
-                'keywords': [],
-                'description': n.get('summary', '')
-            })
-        
-        logger.info(f"Finnhub: fetched {len(results)} news items")
-        return results
-        
-    except Exception as e:
-        logger.error(f"Finnhub news fetch failed: {e}")
-        return []
-
-
-# ============================
-# NLP PROCESSING
-# ============================
-
-def filter_high_impact_news(news_items: List[Dict]) -> List[Dict]:
-    """
-    Filter news to keep only potentially high-impact items
-    
-    Uses keyword matching for speed, then Grok for deeper analysis
-    """
-    high_impact = []
-    
-    for item in news_items:
-        title = item.get('title', '').lower()
-        desc = item.get('description', '').lower()
-        combined = f"{title} {desc}"
-        
-        # Check for bullish keywords
-        bullish_matches = sum(1 for kw in BULLISH_KEYWORDS if kw in combined)
-        bearish_matches = sum(1 for kw in BEARISH_KEYWORDS if kw in combined)
-        
-        # Keep if more bullish than bearish, or if contains key FDA/M&A keywords
-        if bullish_matches > bearish_matches or bullish_matches >= 2:
-            item['_bullish_score'] = bullish_matches
-            item['_bearish_score'] = bearish_matches
-            high_impact.append(item)
-    
-    logger.info(f"Filtered to {len(high_impact)} high-impact news from {len(news_items)}")
-    
-    return high_impact
-
-
-def classify_event_type(title: str, description: str) -> Tuple[str, float]:
-    """
-    Classify news into event type and estimate impact
-    
-    Returns: (event_type, impact_score)
-    """
-    combined = f"{title} {description}".lower()
-    
-    best_match = ('BREAKING_POSITIVE', 0.3)
-    
-    for event_type, config in EVENT_TYPES.items():
-        for keyword in config['keywords']:
-            if keyword in combined:
-                if config['base_impact'] > best_match[1]:
-                    best_match = (event_type, config['base_impact'])
-                break
-    
-    return best_match
-
-
-def extract_tickers_from_news(news_item: Dict, universe_tickers: Set[str]) -> List[str]:
-    """
-    Extract valid tickers from news item
-    
     Sources:
-    1. Explicit tickers in news data
-    2. Ticker patterns in title/description
-    3. Company name → ticker mapping
-    
-    Filter: only keep tickers in our small cap universe
+    - SEC EDGAR 8-K (FREE, critical priority)
+    - Finnhub General News (FREE)
+
+    NO Polygon-via-Grok simulation!
     """
-    found_tickers = set()
-    
-    # 1. Explicit tickers from news source
-    if news_item.get('tickers'):
-        for t in news_item['tickers']:
-            if t.upper() in universe_tickers:
-                found_tickers.add(t.upper())
-    
-    # 2. Ticker pattern matching in text
-    title = news_item.get('title', '')
-    desc = news_item.get('description', '')
-    combined = f"{title} {desc}"
-    
-    # Pattern: $TICKER or (TICKER) or "TICKER:"
-    ticker_patterns = [
-        r'\$([A-Z]{1,5})\b',           # $NVDA
-        r'\(([A-Z]{1,5})\)',            # (NVDA)
-        r'\b([A-Z]{2,5}):\s',           # NVDA:
-        r'\b([A-Z]{2,5})\s(?:stock|shares|inc|corp|ltd)', # NVDA stock
-    ]
-    
-    for pattern in ticker_patterns:
-        matches = re.findall(pattern, combined, re.IGNORECASE)
-        for match in matches:
-            ticker = match.upper()
-            if ticker in universe_tickers and len(ticker) >= 2:
-                found_tickers.add(ticker)
-    
-    return list(found_tickers)
+    logger.info(f"Fetching news V6.1 (last {hours_back}h)...")
+
+    all_items = []
+
+    # Use V6.1 Global News Ingestor
+    ingestor = get_global_ingestor(universe_tickers)
+    result = await ingestor.scan(hours_back=hours_back)
+
+    # Convert to standard format
+    for item in result.news_items:
+        all_items.append({
+            'id': item.id,
+            'title': item.headline,
+            'description': item.summary,
+            'tickers': item.tickers,
+            'published': item.published_at.isoformat(),
+            'url': item.url,
+            'source': item.source,
+            'source_priority': item.source_priority,
+            'filter_priority': item.filter_priority.name if item.filter_priority else 'LOW',
+            'filter_category': item.filter_category
+        })
+
+    logger.info(f"V6.1: fetched {len(all_items)} news items")
+
+    return all_items
 
 
-def analyze_news_with_grok(news_items: List[Dict], universe_tickers: Set[str]) -> List[NewsEvent]:
+def fetch_news_sync(universe_tickers: Set[str], hours_back: int = 6) -> List[Dict]:
     """
-    Use Grok for deep NLP analysis of news items
-    
-    - Extract all tickers mentioned
-    - Classify event type
-    - Score impact
-    - Determine sentiment
+    Synchronous wrapper for fetch_news_v6
+    """
+    import asyncio
+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    return loop.run_until_complete(fetch_news_v6(universe_tickers, hours_back))
+
+
+# ============================
+# NLP PROCESSING (Grok for classification ONLY)
+# ============================
+
+async def classify_events_v6(news_items: List[Dict], universe_tickers: Set[str]) -> List[NewsEvent]:
+    """
+    Classify news items using V6.1 NLP Classifier
+
+    Grok is used ONLY for EVENT_TYPE classification.
+    NO data sourcing via Grok!
     """
     if not news_items:
         return []
-    
-    logger.info(f"Grok analyzing {len(news_items)} news items...")
-    
-    # Batch for efficiency
-    batch_size = 20
-    all_events = []
-    
-    for i in range(0, len(news_items), batch_size):
-        batch = news_items[i:i + batch_size]
-        
-        # Format news for Grok
-        news_text = ""
-        for idx, item in enumerate(batch):
-            news_text += f"\n[{idx}] {item.get('title', '')}\n"
-            if item.get('description'):
-                news_text += f"    {item.get('description', '')[:200]}\n"
-        
-        prompt = f"""Analyze these news items for stock trading signals.
 
-NEWS ITEMS:
-{news_text}
+    logger.info(f"Classifying {len(news_items)} news items...")
 
-For each news item, extract:
-1. ALL stock tickers mentioned (format: uppercase, 1-5 letters)
-2. Event type from this hierarchy:
-   TIER 1 (0.90-1.00): FDA_APPROVAL, PDUFA_DECISION, BUYOUT_CONFIRMED
-   TIER 2 (0.75-0.89): FDA_TRIAL_POSITIVE, BREAKTHROUGH_DESIGNATION, FDA_FAST_TRACK, MERGER_ACQUISITION, EARNINGS_BEAT_BIG, MAJOR_CONTRACT
-   TIER 3 (0.60-0.74): GUIDANCE_RAISE, EARNINGS_BEAT, PARTNERSHIP, PRICE_TARGET_RAISE
-   TIER 4 (0.45-0.59): ANALYST_UPGRADE, SHORT_SQUEEZE_SIGNAL, UNUSUAL_VOLUME_NEWS
-   TIER 5 (0.30-0.44): BUYOUT_RUMOR, SOCIAL_MEDIA_SURGE, BREAKING_POSITIVE
-   or NONE if no catalyst
-3. Impact score: aligned with tier (FDA_APPROVAL ~0.95, ANALYST_UPGRADE ~0.52)
-4. Sentiment: BULLISH, BEARISH, or NEUTRAL
+    classifier = get_classifier()
+    ticker_extractor = get_ticker_extractor(universe_tickers)
+    events = []
 
-Return ONLY a JSON array:
-[
-    {{
-        "index": 0,
-        "tickers": ["NVDA", "AMD"],
-        "event_type": "EARNINGS_BEAT",
-        "impact_score": 0.65,
-        "sentiment": "BULLISH"
-    }}
-]
+    for item in news_items:
+        headline = item.get('title', '')
+        summary = item.get('description', '')
 
-Skip items with NONE event type or impact < 0.3. Only include items with clear bullish catalysts."""
-
-        try:
-            payload = {
-                "model": "grok-4-1-fast-reasoning",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.2
-            }
-            
-            headers = {
-                "Authorization": f"Bearer {GROK_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            
-            r = safe_post(
-                "https://api.x.ai/v1/chat/completions",
-                json=payload,
-                headers=headers,
-                timeout=45
-            )
-            
-            data = r.json()
-            content = data["choices"][0]["message"]["content"]
-            
-            # Parse JSON
-            json_match = re.search(r'\[.*\]', content, re.DOTALL)
-            if json_match:
-                analyses = json.loads(json_match.group())
-                
-                for analysis in analyses:
-                    idx = analysis.get('index', 0)
-                    if idx < len(batch):
-                        original = batch[idx]
-                        
-                        # Filter tickers to our universe
-                        valid_tickers = [
-                            t.upper() for t in analysis.get('tickers', [])
-                            if t.upper() in universe_tickers
-                        ]
-                        
-                        if valid_tickers and analysis.get('impact_score', 0) >= 0.3:
-                            event = NewsEvent(
-                                headline=original.get('title', ''),
-                                summary=original.get('description', '')[:200],
-                                tickers=valid_tickers,
-                                event_type=analysis.get('event_type', 'BREAKING_POSITIVE'),
-                                impact_score=analysis.get('impact_score', 0.5),
-                                sentiment=analysis.get('sentiment', 'BULLISH'),
-                                source='grok_nlp',
-                                published_at=original.get('published', datetime.utcnow().isoformat()),
-                                url=original.get('url')
-                            )
-                            all_events.append(event)
-            
-            time.sleep(1)  # Rate limit
-            
-        except Exception as e:
-            logger.error(f"Grok analysis batch failed: {e}")
+        # Skip if no content
+        if not headline:
             continue
-    
-    logger.info(f"Grok extracted {len(all_events)} valid events")
-    
-    return all_events
+
+        # Extract tickers
+        existing_tickers = item.get('tickers', [])
+        extracted = ticker_extractor.extract_validated(f"{headline} {summary}")
+        all_tickers = list(set(existing_tickers + extracted))
+
+        # Filter to universe
+        valid_tickers = [t for t in all_tickers if t in universe_tickers]
+
+        if not valid_tickers:
+            continue
+
+        # NLP Classification (Grok)
+        try:
+            result = await classifier.classify(headline, summary)
+
+            # Skip low impact
+            if result.impact < 0.3 or result.event_type == "NONE":
+                continue
+
+            event = NewsEvent(
+                headline=headline,
+                summary=summary[:200] if summary else "",
+                tickers=valid_tickers,
+                event_type=result.event_type,
+                impact_score=result.impact,
+                sentiment="BULLISH" if result.impact >= 0.5 else "NEUTRAL",
+                source=item.get('source', 'unknown'),
+                published_at=item.get('published', datetime.utcnow().isoformat()),
+                url=item.get('url'),
+                tier=result.tier
+            )
+            events.append(event)
+
+        except Exception as e:
+            logger.warning(f"Classification error: {e}")
+            continue
+
+    logger.info(f"Classified {len(events)} valid events")
+    return events
+
+
+def classify_events_sync(news_items: List[Dict], universe_tickers: Set[str]) -> List[NewsEvent]:
+    """Synchronous wrapper"""
+    import asyncio
+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    return loop.run_until_complete(classify_events_v6(news_items, universe_tickers))
 
 
 # ============================
@@ -542,40 +265,37 @@ Skip items with NONE event type or impact < 0.3. Only include items with clear b
 def aggregate_events_by_ticker(events: List[NewsEvent]) -> Dict[str, TickerEvents]:
     """
     Aggregate all events by ticker
-    
+
     Returns dict: ticker → TickerEvents
     """
     ticker_map = defaultdict(list)
-    
+
     for event in events:
         for ticker in event.tickers:
             ticker_map[ticker].append(event)
-    
+
     results = {}
-    
+
     for ticker, ticker_events in ticker_map.items():
-        # Calculate total impact (max, not sum, to avoid over-counting)
+        # Calculate total impact (max, not sum)
         impacts = [e.impact_score for e in ticker_events]
         total_impact = max(impacts) if impacts else 0
-        
-        # Add bonus for multiple events
+
+        # Confluence bonus for multiple events
         if len(ticker_events) > 1:
             total_impact = min(1.0, total_impact + 0.1 * (len(ticker_events) - 1))
-        
-        # Find dominant event type
-        type_counts = defaultdict(int)
-        for e in ticker_events:
-            type_counts[e.event_type] += 1
-        dominant_type = max(type_counts, key=type_counts.get) if type_counts else 'UNKNOWN'
-        
+
+        # Find dominant event type (highest impact)
+        dominant_event = max(ticker_events, key=lambda e: e.impact_score)
+
         results[ticker] = TickerEvents(
             ticker=ticker,
             events=ticker_events,
             total_impact=round(total_impact, 3),
-            dominant_event_type=dominant_type,
+            dominant_event_type=dominant_event.event_type,
             event_count=len(ticker_events)
         )
-    
+
     return results
 
 
@@ -585,113 +305,133 @@ def aggregate_events_by_ticker(events: List[NewsEvent]) -> Dict[str, TickerEvent
 
 def run_news_flow_screener(universe_tickers: List[str], hours_back: int = 6) -> Dict[str, TickerEvents]:
     """
-    Main entry point for news flow screening
-    
+    Main entry point for news flow screening (V6.1)
+
     Flow:
-    1. Fetch global news (Polygon + Finnhub)
-    2. Filter high-impact news
-    3. NLP analysis with Grok
-    4. Extract and validate tickers
-    5. Aggregate by ticker
-    
+    1. Fetch global news via V6.1 Ingestors (SEC + Finnhub)
+    2. Extract and validate tickers
+    3. NLP classification with Grok (EVENT_TYPE only)
+    4. Aggregate by ticker
+
     Args:
         universe_tickers: List of valid small cap tickers
         hours_back: How many hours to look back
-    
+
     Returns:
         Dict[ticker] -> TickerEvents with all relevant events
     """
-    logger.info(f"=" * 60)
-    logger.info(f"NEWS FLOW SCREENER - Last {hours_back}h")
+    logger.info("=" * 60)
+    logger.info(f"NEWS FLOW SCREENER V6.1 - Last {hours_back}h")
     logger.info(f"Universe: {len(universe_tickers)} tickers")
-    logger.info(f"=" * 60)
-    
+    logger.info("Sources: SEC EDGAR + Finnhub (100% real)")
+    logger.info("=" * 60)
+
     universe_set = set(t.upper() for t in universe_tickers)
-    
-    # Step 1: Fetch news from all sources
-    all_news = []
-    
-    polygon_news = fetch_polygon_news_global(hours_back)
-    all_news.extend(polygon_news)
-    
-    finnhub_news = fetch_finnhub_general_news()
-    all_news.extend(finnhub_news)
-    
-    logger.info(f"Total raw news: {len(all_news)}")
-    
+
+    # Step 1: Fetch news from V6.1 real sources
+    all_news = fetch_news_sync(universe_set, hours_back)
+
+    logger.info(f"Total news fetched: {len(all_news)}")
+
     if not all_news:
         logger.warning("No news fetched")
         return {}
-    
-    # Step 2: Filter high-impact news
-    high_impact = filter_high_impact_news(all_news)
-    
-    if not high_impact:
-        logger.info("No high-impact news found")
-        return {}
-    
-    # Step 3: Deep NLP analysis with Grok
-    events = analyze_news_with_grok(high_impact, universe_set)
-    
+
+    # Step 2: NLP Classification (Grok for EVENT_TYPE only)
+    events = classify_events_sync(all_news, universe_set)
+
     if not events:
         logger.info("No valid events extracted")
         return {}
-    
-    # Step 4: Aggregate by ticker
+
+    # Step 3: Aggregate by ticker
     ticker_events = aggregate_events_by_ticker(events)
-    
-    # Step 5: Sort by impact
+
+    # Step 4: Sort by impact
     sorted_tickers = sorted(
         ticker_events.keys(),
         key=lambda t: ticker_events[t].total_impact,
         reverse=True
     )
-    
+
     # Log results
-    logger.info(f"\n📊 NEWS FLOW RESULTS:")
-    logger.info(f"{'='*50}")
-    
-    for ticker in sorted_tickers[:20]:  # Top 20
+    logger.info(f"\nNEWS FLOW RESULTS:")
+    logger.info("=" * 50)
+
+    for ticker in sorted_tickers[:20]:
         te = ticker_events[ticker]
         logger.info(
             f"  {ticker}: impact={te.total_impact:.2f}, "
             f"type={te.dominant_event_type}, "
             f"events={te.event_count}"
         )
-    
+
     return ticker_events
 
 
-def get_events_by_type(ticker_events: Dict[str, TickerEvents]) -> Dict[str, List[str]]:
+# ============================
+# ASYNC VERSION
+# ============================
+
+async def run_news_flow_screener_async(
+    universe_tickers: List[str],
+    hours_back: int = 6
+) -> Dict[str, TickerEvents]:
+    """
+    Async version of news flow screener
+    """
+    logger.info("=" * 60)
+    logger.info(f"NEWS FLOW SCREENER V6.1 ASYNC - Last {hours_back}h")
+    logger.info("=" * 60)
+
+    universe_set = set(t.upper() for t in universe_tickers)
+
+    # Fetch
+    all_news = await fetch_news_v6(universe_set, hours_back)
+
+    if not all_news:
+        return {}
+
+    # Classify
+    events = await classify_events_v6(all_news, universe_set)
+
+    if not events:
+        return {}
+
+    # Aggregate
+    return aggregate_events_by_ticker(events)
+
+
+# ============================
+# UTILITY FUNCTIONS
+# ============================
+
+def get_events_by_type(ticker_events: Dict[str, TickerEvents]) -> Dict[str, List[Dict]]:
     """
     Get tickers grouped by event type
-    
-    Returns: {event_type: [tickers]}
     """
     type_map = defaultdict(list)
-    
+
     for ticker, te in ticker_events.items():
         type_map[te.dominant_event_type].append({
             'ticker': ticker,
             'impact': te.total_impact,
             'event_count': te.event_count
         })
-    
+
     # Sort each type by impact
     for event_type in type_map:
         type_map[event_type].sort(key=lambda x: x['impact'], reverse=True)
-    
+
     return dict(type_map)
 
 
 def get_calendar_view(ticker_events: Dict[str, TickerEvents]) -> List[Dict]:
     """
     Get chronological view of all events
-    
-    Returns: List of events sorted by time
     """
     all_events = []
-    
+
     for ticker, te in ticker_events.items():
         for event in te.events:
             all_events.append({
@@ -699,14 +439,53 @@ def get_calendar_view(ticker_events: Dict[str, TickerEvents]) -> List[Dict]:
                 'headline': event.headline,
                 'event_type': event.event_type,
                 'impact': event.impact_score,
+                'tier': event.tier,
                 'published_at': event.published_at,
-                'sentiment': event.sentiment
+                'sentiment': event.sentiment,
+                'source': event.source
             })
-    
+
     # Sort by time
     all_events.sort(key=lambda x: x['published_at'], reverse=True)
-    
+
     return all_events
+
+
+def get_top_catalysts(ticker_events: Dict[str, TickerEvents], limit: int = 10) -> List[Dict]:
+    """
+    Get top catalysts sorted by impact
+    """
+    sorted_tickers = sorted(
+        ticker_events.items(),
+        key=lambda x: x[1].total_impact,
+        reverse=True
+    )[:limit]
+
+    return [
+        {
+            'ticker': ticker,
+            'impact': te.total_impact,
+            'event_type': te.dominant_event_type,
+            'event_count': te.event_count,
+            'headlines': [e.headline for e in te.events[:3]]
+        }
+        for ticker, te in sorted_tickers
+    ]
+
+
+# ============================
+# MODULE EXPORTS
+# ============================
+
+__all__ = [
+    "run_news_flow_screener",
+    "run_news_flow_screener_async",
+    "NewsEvent",
+    "TickerEvents",
+    "get_events_by_type",
+    "get_calendar_view",
+    "get_top_catalysts",
+]
 
 
 # ============================
@@ -714,30 +493,36 @@ def get_calendar_view(ticker_events: Dict[str, TickerEvents]) -> List[Dict]:
 # ============================
 
 if __name__ == "__main__":
+    import asyncio
+
     print("=" * 60)
-    print("NEWS FLOW SCREENER - TEST")
+    print("NEWS FLOW SCREENER V6.1 - TEST")
+    print("100% Real Sources (NO Polygon-via-Grok)")
     print("=" * 60)
-    
+
     # Test universe
     test_universe = [
         "AAPL", "TSLA", "NVDA", "AMD", "PLTR", "SOFI", "NIO", "LCID",
         "MARA", "RIOT", "COIN", "HOOD", "UPST", "AFRM", "SQ", "PYPL"
     ]
-    
+
     print(f"\nTest universe: {len(test_universe)} tickers")
-    
-    results = run_news_flow_screener(test_universe, hours_back=6)
-    
-    print(f"\n📊 Results: {len(results)} tickers with events")
-    
-    # Show by event type
-    by_type = get_events_by_type(results)
-    print(f"\n📅 By Event Type:")
-    for event_type, tickers in by_type.items():
-        print(f"  {event_type}: {[t['ticker'] for t in tickers[:5]]}")
-    
-    # Show calendar view
-    calendar = get_calendar_view(results)
-    print(f"\n📰 Latest Events:")
-    for event in calendar[:10]:
-        print(f"  [{event['event_type']}] {event['ticker']}: {event['headline'][:50]}...")
+
+    async def test():
+        results = await run_news_flow_screener_async(test_universe, hours_back=6)
+
+        print(f"\nResults: {len(results)} tickers with events")
+
+        # Show top catalysts
+        top = get_top_catalysts(results, 10)
+        print(f"\nTop Catalysts:")
+        for cat in top:
+            print(f"  {cat['ticker']}: {cat['event_type']} (impact={cat['impact']:.2f})")
+
+        # Show by event type
+        by_type = get_events_by_type(results)
+        print(f"\nBy Event Type:")
+        for event_type, tickers in by_type.items():
+            print(f"  {event_type}: {[t['ticker'] for t in tickers[:5]]}")
+
+    asyncio.run(test())
