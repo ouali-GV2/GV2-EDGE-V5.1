@@ -315,7 +315,7 @@ def run_edge():
                 except Exception as e:
                     logger.error(f"Options Flow scan failed: {e}", exc_info=True)
                 
-                # === STEP 4: Anticipation Engine (IBKR radar + Grok+Polygon) ===
+                # === STEP 4: Anticipation Engine (IBKR radar + V6.1 Ingestors) ===
                 try:
                     logger.info("🎯 Step 4: Anticipation Engine...")
                     results = run_anticipation_scan(tickers, mode="afterhours")

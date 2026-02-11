@@ -848,7 +848,7 @@ class NLPEnrichi:
                     confidence_sum += conf
                     sources.add(source)
 
-                    if source in ("news", "finnhub", "polygon"):
+                    if source in ("news", "finnhub", "finnhub_company", "sec_8k", "finnhub_fallback"):
                         news_sentiment_sum += score
                         news_count += 1
 

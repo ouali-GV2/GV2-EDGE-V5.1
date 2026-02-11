@@ -44,7 +44,6 @@ Complete guide to install, configure, and deploy GV2-EDGE on a production server
 | Service | Purpose | Cost |
 |---------|---------|------|
 | IBKR OPRA L1 | Options flow data | ~$1.50/month |
-| Polygon.io | Enhanced news coverage | Free tier OK |
 
 ---
 

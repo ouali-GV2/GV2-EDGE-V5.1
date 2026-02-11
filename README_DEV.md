@@ -226,10 +226,10 @@ main.py
 ### After-Hours (16:00-20:00 ET)
 
 ```
-1. News Flow Screener
-   └── Fetch ALL news (Polygon + Finnhub)
+1. News Flow Screener (V6.1)
+   └── Fetch news (SEC 8-K + Finnhub)
    └── NLP filter (keywords bullish)
-   └── Grok analysis (extract tickers + impact)
+   └── Grok classification (EVENT_TYPE only)
    └── Output: {ticker: events}
 
 2. Extended Hours Gaps
@@ -243,9 +243,9 @@ main.py
    └── P/C ratio analysis
    └── Output: {ticker: signals}
 
-4. Anticipation Engine
+4. Anticipation Engine (V6.1)
    └── IBKR Radar (anomalies)
-   └── Grok+Polygon (catalysts)
+   └── V6.1 Ingestors (SEC + Finnhub)
    └── Generate WATCH_EARLY / BUY signals
 ```
 
@@ -275,12 +275,12 @@ main.py
 # Classes principales
 class AnticipationState      # État global (suspects, signals)
 class Anomaly               # Anomalie détectée par IBKR
-class CatalystEvent         # Catalyst détecté par Grok
+class CatalystEvent         # Catalyst détecté par V6.1 Ingestors
 class AnticipationSignal    # Signal final
 
 # Fonctions principales
-run_ibkr_radar(tickers)           # Scan large IBKR
-analyze_with_grok_polygon(tickers) # Analyse Grok ciblée
+run_ibkr_radar(tickers)              # Scan large IBKR
+analyze_with_real_sources(tickers)   # V6.1: SEC + Finnhub
 generate_signals(anomalies, catalysts)  # Génération signaux
 run_anticipation_scan(universe, mode)   # Entry point
 ```
@@ -290,11 +290,11 @@ run_anticipation_scan(universe, mode)   # Entry point
 **Rôle** : Scanner news global → mapping tickers
 
 ```python
-# Flow inversé (efficace)
-fetch_polygon_news_global()    # Toutes les news
-filter_high_impact_news()      # Filtre keywords
-analyze_news_with_grok()       # NLP extraction tickers
-aggregate_events_by_ticker()   # Groupement par ticker
+# Flow V6.1 (sources réelles)
+# Utilise les ingestors V6.1:
+# - global_news_ingestor.py (Finnhub general + SEC)
+# - company_news_scanner.py (Finnhub company-specific)
+# - sec_filings_ingestor.py (SEC 8-K + Form 4)
 
 # Entry point
 run_news_flow_screener(universe, hours_back=6)

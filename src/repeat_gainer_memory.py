@@ -462,7 +462,6 @@ def fetch_and_record_top_gainers():
         # For production, integrate with:
         # - Finnhub premium
         # - Yahoo Finance scraping
-        # - Polygon.io
         # - IBKR scanner results
 
         logger.warning("Top gainer fetching not implemented - requires data source integration")
