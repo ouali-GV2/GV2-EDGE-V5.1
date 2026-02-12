@@ -342,3 +342,88 @@ NLP_CATEGORY_FDA_WEIGHT = 1.0
 NLP_CATEGORY_MA_WEIGHT = 0.95
 NLP_CATEGORY_EARNINGS_WEIGHT = 0.85
 NLP_CATEGORY_CONTRACT_WEIGHT = 0.75
+
+# ============================
+# V7.0 ARCHITECTURE (NEW)
+# ============================
+
+# Enable V7.0 unified signal pipeline
+USE_V7_ARCHITECTURE = True            # Use SignalProducer → OrderComputer → ExecutionGate
+
+# ============================
+# EXECUTION GATE (V7)
+# ============================
+
+DAILY_TRADE_LIMIT = 5                 # Max trades per day
+MAX_POSITION_PCT = 0.10               # Max 10% of capital per position
+MAX_TOTAL_EXPOSURE = 0.80             # Max 80% total exposure
+MIN_ORDER_USD = 100                   # Minimum order size
+
+# ============================
+# PRE-HALT ENGINE (V7)
+# ============================
+
+ENABLE_PRE_HALT_ENGINE = True         # Enable pre-halt risk assessment
+
+# Halt risk thresholds
+PRE_HALT_VOLATILITY_THRESHOLD = 3.0   # Volatility multiplier for elevated risk
+PRE_HALT_PRICE_MOVE_THRESHOLD = 0.15  # 15% move triggers elevated risk
+PRE_HALT_NEWS_KEYWORDS = [
+    "halt", "pending news", "acquired", "buyout", "merger",
+    "fda approval", "breakthrough", "sec investigation"
+]
+
+# Position adjustments by halt risk
+PRE_HALT_SIZE_MULTIPLIER_LOW = 1.0
+PRE_HALT_SIZE_MULTIPLIER_MEDIUM = 0.5
+PRE_HALT_SIZE_MULTIPLIER_HIGH = 0.0   # Block execution
+
+# ============================
+# IBKR NEWS TRIGGER (V7)
+# ============================
+
+ENABLE_IBKR_NEWS_TRIGGER = True       # Enable IBKR news-based early alerts
+
+# Trigger keywords by category
+NEWS_HALT_KEYWORDS = [
+    "halt", "halted", "pending news", "news pending",
+    "acquired", "acquisition", "buyout", "merger",
+    "fda approval", "fda clearance", "breakthrough therapy"
+]
+
+NEWS_SPIKE_KEYWORDS = [
+    "surge", "surging", "spike", "spiking", "soar", "soaring",
+    "jump", "jumping", "rally", "unusual volume", "breakout"
+]
+
+NEWS_RISK_KEYWORDS = [
+    "dilution", "offering", "shelf registration", "atm program",
+    "sec investigation", "delisting", "compliance", "going concern"
+]
+
+# ============================
+# RISK GUARD (V7)
+# ============================
+
+ENABLE_RISK_GUARD = True              # Enable unified risk assessment
+
+# Block conditions
+RISK_BLOCK_ON_CRITICAL = True         # Block on CRITICAL risk level
+RISK_BLOCK_ON_ACTIVE_OFFERING = True  # Block on active stock offering
+RISK_BLOCK_ON_DELISTING = True        # Block on delisting risk
+RISK_BLOCK_ON_HALT = True             # Block on current halt
+
+# Position multipliers
+RISK_MIN_POSITION_MULTIPLIER = 0.10   # Minimum 10% of intended size
+
+# ============================
+# MARKET MEMORY MRP/EP (V7)
+# ============================
+
+ENABLE_MARKET_MEMORY = True           # Enable MRP/EP context enrichment
+
+# Auto-activation thresholds (MRP/EP stay inactive until these are met)
+MARKET_MEMORY_MIN_MISSES = 50         # Minimum tracked misses
+MARKET_MEMORY_MIN_TRADES = 30         # Minimum recorded trades
+MARKET_MEMORY_MIN_PATTERNS = 10       # Minimum learned patterns
+MARKET_MEMORY_MIN_PROFILES = 20       # Minimum ticker profiles
