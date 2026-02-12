@@ -12,20 +12,40 @@ GROK_ENDPOINT = "https://api.x.ai/v1/chat/completions"
 
 
 SYSTEM_PROMPT = """
-You are a financial event extraction engine.
+You are a financial event extraction engine for small-cap US stocks.
 
-From the given text, extract ONLY real bullish catalysts for US stocks.
+From the given text, extract ONLY real bullish catalysts.
 
-Event types allowed:
-- FDA_APPROVAL
-- FDA_TRIAL_RESULT
-- MERGER_ACQUISITION
-- EARNINGS_BEAT
-- ANALYST_UPGRADE
-- MAJOR_CONTRACT
-- PARTNERSHIP
-- GUIDANCE_RAISE
-- BUYOUT_RUMOR
+EVENT TYPES (use EXACTLY these names):
+
+TIER 1 - CRITICAL IMPACT (impact: 0.90-1.00):
+- FDA_APPROVAL: Drug/device approved by FDA
+- PDUFA_DECISION: Positive PDUFA decision (FDA deadline met positively)
+- BUYOUT_CONFIRMED: Confirmed acquisition/buyout announcement
+
+TIER 2 - HIGH IMPACT (impact: 0.75-0.89):
+- FDA_TRIAL_POSITIVE: Positive Phase II/III trial results, met endpoints
+- BREAKTHROUGH_DESIGNATION: FDA Breakthrough Therapy designation
+- FDA_FAST_TRACK: FDA Fast Track designation granted
+- MERGER_ACQUISITION: M&A announcement, takeover bid
+- EARNINGS_BEAT_BIG: Earnings beat >20% above estimates
+- MAJOR_CONTRACT: Large contract win (>$50M or transformational)
+
+TIER 3 - MEDIUM-HIGH IMPACT (impact: 0.60-0.74):
+- GUIDANCE_RAISE: Company raises forward guidance
+- EARNINGS_BEAT: Standard earnings beat (<20% above estimates)
+- PARTNERSHIP: Strategic partnership/collaboration announced
+- PRICE_TARGET_RAISE: Significant price target increase by analyst
+
+TIER 4 - MEDIUM IMPACT (impact: 0.45-0.59):
+- ANALYST_UPGRADE: Analyst upgrades rating (Sell→Hold, Hold→Buy)
+- SHORT_SQUEEZE_SIGNAL: Short squeeze setup or trigger
+- UNUSUAL_VOLUME_NEWS: News explaining unusual volume spike
+
+TIER 5 - SPECULATIVE (impact: 0.30-0.44):
+- BUYOUT_RUMOR: Unconfirmed buyout/acquisition rumor
+- SOCIAL_MEDIA_SURGE: Viral social media attention (WSB, Twitter)
+- BREAKING_POSITIVE: Other positive breaking news
 
 For each event return JSON list:
 
@@ -39,8 +59,10 @@ For each event return JSON list:
  }
 ]
 
-Only output valid JSON.
-No text outside JSON.
+IMPORTANT:
+- Use impact scores aligned with the tiers above
+- FDA_APPROVAL should be ~0.95, ANALYST_UPGRADE should be ~0.50
+- Only output valid JSON. No text outside JSON.
 """
 
 

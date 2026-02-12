@@ -1,6 +1,6 @@
 """
-DAILY AUDIT - Mesure Quotidienne de Performance
-===============================================
+DAILY AUDIT V7.0 - Mesure Quotidienne de Performance
+=====================================================
 
 Exécution: Tous les jours à 20h30 UTC (après clôture US)
 
@@ -10,12 +10,20 @@ Objectif:
 - Identifier rapidement les dégradations de performance
 - Alimenter le système d'amélioration continue
 
+V7 Architecture Tracking:
+- SignalProducer detection rate (all signals, never blocked)
+- ExecutionGate allowed vs blocked ratio
+- Block reason breakdown (trade limit, capital, risk guard, pre-halt)
+- Market Memory (MRP/EP) contribution analysis
+- Risk Guard trigger frequency
+
 Metrics clés:
 - hit_rate_daily: % des top gainers détectés
 - early_catch_rate: % détectés > 2h avant spike
 - miss_rate: % des movers manqués
 - false_positives: signaux sans mouvement significatif
 - avg_lead_time: temps moyen avant explosion
+- v7_stats: V7 module performance breakdown
 
 Usage:
     python daily_audit.py  # Exécute l'audit du jour
@@ -29,6 +37,7 @@ import argparse
 import requests
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
+from typing import Dict, List, Any, Optional
 
 import pandas as pd
 
@@ -36,9 +45,34 @@ from utils.logger import get_logger
 from utils.cache import Cache
 from src.signal_logger import get_signals_for_period, get_signal_by_ticker_and_date
 from src.universe_loader import load_universe
-from alerts.telegram_alerts import send_signal_alert
+from alerts.telegram_alerts import send_daily_audit_alert
 
-logger = get_logger("DAILY_AUDIT")
+# V6 Module imports (optional - graceful fallback)
+try:
+    from src.catalyst_score_v3 import CatalystScoreV3
+    HAS_CATALYST_V3 = True
+except ImportError:
+    HAS_CATALYST_V3 = False
+
+try:
+    from src.pre_spike_radar import PreSpikeRadar
+    HAS_PRE_SPIKE = True
+except ImportError:
+    HAS_PRE_SPIKE = False
+
+try:
+    from src.repeat_gainer_memory import RepeatGainerMemory
+    HAS_REPEAT_GAINER = True
+except ImportError:
+    HAS_REPEAT_GAINER = False
+
+try:
+    from src.nlp_enrichi import NLPEnrichi
+    HAS_NLP_ENRICHI = True
+except ImportError:
+    HAS_NLP_ENRICHI = False
+
+logger = get_logger("DAILY_AUDIT_V6")
 
 os.makedirs("data/audit_reports", exist_ok=True)
 
@@ -566,11 +600,7 @@ Signals: {summary['total_signals']} | Gainers: {summary['total_gainers']}
         message += f"\n❌ TOP MISSES: {', '.join(misses)}"
     
     try:
-        send_signal_alert({
-            "ticker": "DAILY_AUDIT",
-            "signal": "AUDIT",
-            "notes": message
-        })
+        send_daily_audit_alert(report)
     except Exception as e:
         logger.warning(f"Telegram send failed: {e}")
 

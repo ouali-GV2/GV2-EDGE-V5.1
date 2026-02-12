@@ -280,10 +280,10 @@ def get_dark_pool_assessment() -> Dict:
             '5. Coûtent cher pour du temps réel (FlowAlgo: ~$100/mois)'
         ],
         'better_alternatives': [
-            '✅ News Flow Screener (NOUVEAU) - Détection temps réel',
+            '✅ News Flow Screener (V6.1) - Détection temps réel',
             '✅ Options Flow via IBKR OPRA - Signal smart money',
             '✅ Extended Hours Quotes - Gaps forming en temps réel',
-            '✅ Grok + Polygon - News ticker-specific instant'
+            '✅ V6.1 Ingestors (SEC + Finnhub) - News temps réel'
         ],
         'when_useful': 'Dark pool peut être utile APRÈS avoir détecté un mover pour confirmer accumulation institutionnelle, mais pas pour la détection initiale.'
     }

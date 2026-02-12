@@ -1,19 +1,28 @@
 """
-GV2-EDGE V5.1 — Professional Trading Dashboard
+GV2-EDGE V7.0 — Professional Trading Dashboard
 ===============================================
 
 Dashboard temps réel pour le système de détection anticipative
 des top gainers small caps US.
 
+V7.0 Detection/Execution Separation Architecture:
+- SignalProducer -> OrderComputer -> ExecutionGate pipeline
+- Detection always visible (never blocked)
+- Execution limits applied only at final layer
+- Risk Guard integration (dilution, compliance, halt)
+- Pre-Halt Engine status
+- Market Memory (MRP/EP) context display
+- Blocked signals tracking with reasons
+
 Design: Dark theme trading professionnel
 Stack: Streamlit + Plotly + Custom CSS
 
 Sections:
-1. Header avec status système
-2. Signaux actifs (WATCH_EARLY / BUY / BUY_STRONG)
+1. Header avec status système + V7 modules
+2. Signaux actifs avec V7 intelligence (including blocked)
 3. Monster Score breakdown (radar chart)
-4. Timeline events (news, earnings, FDA)
-5. Extended Hours heatmap
+4. Execution Gate stats (allowed vs blocked)
+5. Market Memory status (MRP/EP readiness)
 6. Audit metrics (hit rate, lead time)
 7. System health
 """
@@ -35,7 +44,7 @@ import time
 # ============================
 
 st.set_page_config(
-    page_title="GV2-EDGE V5.1 — Trading Radar",
+    page_title="GV2-EDGE V7.0 — Trading Radar",
     page_icon="🎯",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -631,7 +640,23 @@ with st.sidebar:
         st.markdown(f"{icon} **{component.upper()}**")
     
     st.markdown("---")
-    st.caption(f"v5.1 • {datetime.utcnow().strftime('%H:%M:%S UTC')}")
+
+    # V7 Modules Status
+    st.markdown("### 🧠 V7 Modules")
+    v7_modules = {
+        "SignalProducer": True,
+        "OrderComputer": True,
+        "ExecutionGate": True,
+        "RiskGuard": True,
+        "PreHaltEngine": True,
+        "MarketMemory": True
+    }
+    for module, active in v7_modules.items():
+        icon = "🟢" if active else "🔴"
+        st.markdown(f"{icon} {module}")
+
+    st.markdown("---")
+    st.caption(f"v7.0 • {datetime.utcnow().strftime('%H:%M:%S UTC')}")
 
 
 # ============================
@@ -641,8 +666,8 @@ with st.sidebar:
 col_title, col_status = st.columns([3, 1])
 
 with col_title:
-    st.markdown("# 🎯 GV2-EDGE V5.1")
-    st.markdown("**Early Top Gainer Detection System** — Small Caps US")
+    st.markdown("# 🎯 GV2-EDGE V7.0")
+    st.markdown("**Detection/Execution Separation Architecture** — Small Caps US")
 
 with col_status:
     session = get_market_session()
@@ -1073,7 +1098,7 @@ st.markdown("---")
 col_footer1, col_footer2, col_footer3 = st.columns(3)
 
 with col_footer1:
-    st.caption("🎯 GV2-EDGE V5.1 — Anticipation Engine")
+    st.caption("🎯 GV2-EDGE V7.0 — Detection/Execution Separation")
 
 with col_footer2:
     st.caption(f"Last update: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")

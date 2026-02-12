@@ -1,328 +1,408 @@
-# 📘 GV2-EDGE V5.3 — Developer Documentation
+# GV2-EDGE V7.0 - Developer Documentation
 
-## 🎯 Objectif
+## Objectif
 
-Ce document explique :
-- L'architecture technique V5.3 (Full Intelligence Integration)
-- Le rôle de chaque module
-- Les flux de données et le scoring
-- Comment étendre le système
+Ce document explique:
+- L'architecture technique V7.0 (Detection/Execution Separation)
+- Le role de chaque module
+- Les flux de donnees et le scoring
+- Comment etendre le systeme
 
 ---
 
-## 🆕 Changements V5.3
+## Architecture V7.0
 
-### Monster Score V3 - Nouveau Système de Poids
+### Principe Fondamental
+
+**Detection JAMAIS bloquee, Execution UNIQUEMENT limitee**
+
+```
+AVANT (V6): if blocked: return None  # Signal invisible
+APRES (V7): signal = produce()       # TOUJOURS visible
+            order = compute()         # TOUJOURS calcule
+            decision = gate()         # Seul point de blocage
+```
+
+### 3-Layer Pipeline
 
 ```python
-ADVANCED_MONSTER_WEIGHTS = {
-    "event": 0.25,          # Catalysts (earnings, FDA, M&A)
-    "volume": 0.17,         # Volume spikes
-    "pattern": 0.17,        # Technical patterns
-    "pm_transition": 0.13,  # PM→RTH transition
-    "momentum": 0.08,       # Price momentum
-    "squeeze": 0.04,        # Bollinger squeeze
-    "options_flow": 0.10,   # NEW: Options activity (volume + concentration)
-    "social_buzz": 0.06,    # NEW: Social media buzz
-}
-# Total = 100%
-```
+# Layer 1: SignalProducer (Detection - Never Blocked)
+signal = await producer.detect(detection_input)
+# -> UnifiedSignal with signal_type, monster_score
 
-### Options Flow - Changements
+# Enrichment: Market Memory (Informational)
+enrich_signal_with_context(signal)
+# -> Adds context_mrp, context_ep, context_active
 
-- Volume/OI ratio **DÉSACTIVÉ** (OI delayed J-1, peu fiable)
-- Nouveaux signaux basés sur volume absolu:
-  - `HIGH_CALL_VOLUME` : >= 5000 contracts
-  - `LOW_PC_RATIO` : Put/Call < 0.5
-  - `CALL_CONCENTRATION` : 70%+ calls
-  - `HIGH_OPTIONS_VOLUME` : >= 10,000 total
+# Layer 2: OrderComputer (Always Computed)
+signal = computer.compute_order(signal, market_context)
+# -> Adds ProposedOrder (size, stop, target)
 
----
+# Risk Assessment: UnifiedGuard (Informational)
+risk_flags = await guard.assess(ticker, price, volatility)
+# -> RiskFlags for ExecutionGate
 
-## 🧱 Architecture V5.1
-
-```
-main.py
-│
-├── 🎯 ANTICIPATION ENGINE (NEW V5)
-│   ├── src/anticipation_engine.py      # Orchestrateur principal
-│   ├── src/news_flow_screener.py       # NEWS → NLP → Tickers
-│   ├── src/options_flow_ibkr.py        # Options via OPRA L1
-│   ├── src/extended_hours_quotes.py    # After-hours/Pre-market
-│   └── src/dark_pool_alternatives.py   # Évaluation (désactivé)
-│
-├── 📊 DATA LAYER
-│   ├── src/universe_loader.py          # Univers small caps
-│   ├── src/ibkr_connector.py           # IBKR API (READ ONLY)
-│   └── utils/cache.py                  # Cache système
-│
-├── 📅 EVENT LAYER
-│   ├── src/event_engine/event_hub.py   # Agrégation events
-│   ├── src/event_engine/nlp_event_parser.py  # NLP Grok
-│   ├── src/fda_calendar.py             # FDA/Biotech events
-│   └── src/historical_beat_rate.py     # Earnings prediction
-│
-├── 📈 ANALYSIS LAYER
-│   ├── src/feature_engine.py           # Features techniques
-│   ├── src/pattern_analyzer.py         # Patterns detection
-│   ├── src/pm_scanner.py               # Pre-market scanner
-│   ├── src/pm_transition.py            # PM→RTH transition
-│   └── src/social_buzz.py              # Social sentiment
-│
-├── 🎯 SCORING LAYER
-│   ├── src/scoring/monster_score.py    # Score principal
-│   ├── src/ensemble_engine.py          # Confluence
-│   └── src/signal_engine.py            # BUY/BUY_STRONG/WATCH
-│
-├── 💰 PORTFOLIO LAYER
-│   ├── src/portfolio_engine.py         # Risk management
-│   └── src/watch_list.py               # Watch list gestion
-│
-├── 📤 OUTPUT LAYER
-│   ├── alerts/telegram_alerts.py       # Telegram notifications
-│   ├── src/signal_logger.py            # SQLite persistence
-│   └── dashboards/streamlit_dashboard.py
-│
-└── 🔍 AUDIT LAYER
-    ├── daily_audit.py                  # Audit quotidien
-    ├── weekly_deep_audit.py            # Audit hebdomadaire
-    └── performance_attribution.py      # Attribution performance
+# Layer 3: ExecutionGate (Only Blocking Layer)
+signal = gate.evaluate(signal, risk_flags)
+# -> Adds ExecutionDecision (ALLOW/BLOCK + reasons)
 ```
 
 ---
 
-## 🔄 Flow Principal V5.1
+## Structure des Modules
 
-### After-Hours (16:00-20:00 ET)
-
-```
-1. News Flow Screener
-   └── Fetch ALL news (Polygon + Finnhub)
-   └── NLP filter (keywords bullish)
-   └── Grok analysis (extract tickers + impact)
-   └── Output: {ticker: events}
-
-2. Extended Hours Gaps
-   └── IBKR quotes extended hours
-   └── Detect gaps > 3%
-   └── Output: [ExtendedQuote]
-
-3. Options Flow
-   └── IBKR OPRA L1 data
-   └── Volume vs OI analysis
-   └── P/C ratio analysis
-   └── Output: {ticker: signals}
-
-4. Anticipation Engine
-   └── IBKR Radar (anomalies)
-   └── Grok+Polygon (catalysts)
-   └── Generate WATCH_EARLY / BUY signals
-```
-
-### Pre-Market (04:00-09:30 ET)
+### src/engines/ - Core Pipeline
 
 ```
-1. Signal Upgrades
-   └── Check WATCH_EARLY signals
-   └── PM confirmation (gap, volume, momentum)
-   └── Upgrade to BUY if confirmed
-
-2. Regular Edge Cycle
-   └── Feature extraction
-   └── Monster Score
-   └── Signal generation
+engines/
+├── __init__.py
+├── signal_producer.py    # Layer 1: Detection
+├── order_computer.py     # Layer 2: Order calculation
+└── execution_gate.py     # Layer 3: Limits
 ```
 
----
-
-## 📦 Modules Clés
-
-### anticipation_engine.py
-
-**Rôle** : Orchestrateur principal de l'anticipation
+#### signal_producer.py
 
 ```python
-# Classes principales
-class AnticipationState      # État global (suspects, signals)
-class Anomaly               # Anomalie détectée par IBKR
-class CatalystEvent         # Catalyst détecté par Grok
-class AnticipationSignal    # Signal final
-
-# Fonctions principales
-run_ibkr_radar(tickers)           # Scan large IBKR
-analyze_with_grok_polygon(tickers) # Analyse Grok ciblée
-generate_signals(anomalies, catalysts)  # Génération signaux
-run_anticipation_scan(universe, mode)   # Entry point
-```
-
-### news_flow_screener.py
-
-**Rôle** : Scanner news global → mapping tickers
-
-```python
-# Flow inversé (efficace)
-fetch_polygon_news_global()    # Toutes les news
-filter_high_impact_news()      # Filtre keywords
-analyze_news_with_grok()       # NLP extraction tickers
-aggregate_events_by_ticker()   # Groupement par ticker
-
-# Entry point
-run_news_flow_screener(universe, hours_back=6)
-```
-
-### options_flow_ibkr.py (V5.3 - Updated)
-
-**Rôle** : Détection options via IBKR OPRA L1 (volume-based)
-
-```python
-# Signaux détectés (V5.3 - Volume based, NO OI ratio)
-HIGH_CALL_VOLUME    # Call volume >= 5000 contracts
-LOW_PC_RATIO        # Put/Call < 0.5 (bullish)
-CALL_CONCENTRATION  # 70%+ calls
-HIGH_OPTIONS_VOLUME # Total volume >= 10k
-
-# NOTE: Volume/OI ratio DISABLED (OI is delayed J-1)
-
-# Entry points
-scan_options_flow(tickers)      # Batch scan
-get_options_flow_score(ticker)  # Single ticker score
-```
-
-**Impact V5.3** : 10% du Monster Score (composante core)
-
-### extended_hours_quotes.py
-
-**Rôle** : Quotes after-hours et pre-market
-
-```python
-# Data structure
 @dataclass
-class ExtendedQuote:
-    ticker, session, last, bid, ask
-    volume, extended_volume
-    prev_close, rth_close, rth_open
-    gap_pct, change_pct
+class DetectionInput:
+    ticker: str
+    current_price: float
+    monster_score: float
+    catalyst_score: float
+    pre_spike_state: PreSpikeState
+    catalyst_type: Optional[str]
+    catalyst_confidence: float
+    volume_ratio: float
+    price_change_pct: float
+    market_session: str
 
-# Entry points
-get_extended_quote(ticker)
-scan_afterhours_gaps(tickers, min_gap=0.03)
-scan_premarket_gaps(tickers, min_gap=0.03)
-get_extended_hours_boost(ticker)  # Pour Monster Score
+class SignalProducer:
+    async def detect(self, input: DetectionInput) -> UnifiedSignal:
+        """NEVER blocks - always produces a signal"""
+        signal_type = self._classify_signal(input)
+        return UnifiedSignal(
+            ticker=input.ticker,
+            signal_type=signal_type,
+            monster_score=input.monster_score,
+            # ... more fields
+        )
 ```
 
----
-
-## 🔧 Configuration
-
-### config.py - Variables Clés
+#### order_computer.py
 
 ```python
-# APIs
-GROK_API_KEY = "xai-..."
-FINNHUB_API_KEY = "..."
-TELEGRAM_BOT_TOKEN = "..."
+@dataclass
+class ProposedOrder:
+    side: str                 # "BUY"
+    size_shares: int          # Calculated position size
+    size_usd: float           # Dollar amount
+    price_target: float       # Entry price
+    stop_loss: float          # Stop-loss price
+    take_profit: float        # Take-profit price
+    confidence: float         # Order confidence
 
-# IBKR
-USE_IBKR_DATA = True
-IBKR_HOST = "127.0.0.1"
-IBKR_PORT = 7497  # 7497=paper, 7496=live
+class OrderComputer:
+    def compute_order(self, signal: UnifiedSignal, market: MarketContext) -> UnifiedSignal:
+        """ALWAYS computes order - never blocks"""
+        order = self._calculate_order(signal, market)
+        signal.proposed_order = order
+        return signal
+```
 
-# Seuils signaux
-BUY_THRESHOLD = 0.65
-BUY_STRONG_THRESHOLD = 0.80
+#### execution_gate.py
 
-# Universe
-MAX_MARKET_CAP = 2_000_000_000  # $2B
-MIN_PRICE = 1.0
-MAX_PRICE = 50.0
+```python
+@dataclass
+class ExecutionDecision:
+    allowed: bool
+    size_multiplier: float    # 1.0 = full, 0.5 = half, 0.0 = blocked
+    blocked_by: List[BlockReason]
+    block_message: str
+
+class ExecutionGate:
+    def evaluate(self, signal: UnifiedSignal, risk_flags: RiskFlags) -> UnifiedSignal:
+        """ONLY layer that can block execution"""
+        decision = self._evaluate_limits(signal, risk_flags)
+        signal.execution = decision
+        return signal
+```
+
+### src/models/signal_types.py - Data Models
+
+```python
+@dataclass
+class UnifiedSignal:
+    # Core
+    ticker: str
+    signal_type: SignalType
+    monster_score: float
+    timestamp: datetime
+
+    # Pre-states
+    pre_spike_state: PreSpikeState
+    pre_halt_state: PreHaltState
+
+    # MRP/EP Context
+    context_mrp: Optional[float]
+    context_ep: Optional[float]
+    context_confidence: Optional[float]
+    context_active: bool
+
+    # Order (Layer 2)
+    proposed_order: Optional[ProposedOrder]
+
+    # Execution (Layer 3)
+    execution: Optional[ExecutionDecision]
+
+    def is_actionable(self) -> bool:
+        """Signal worth considering (not HOLD/AVOID)"""
+        return self.signal_type in [SignalType.BUY, SignalType.BUY_STRONG, SignalType.WATCH]
+
+    def is_executable(self) -> bool:
+        """Allowed by ExecutionGate"""
+        return self.execution and self.execution.allowed
+```
+
+### src/risk_guard/ - Risk Assessment
+
+```
+risk_guard/
+├── __init__.py
+├── unified_guard.py       # Main entry point
+├── dilution_detector.py   # ATM, offerings
+├── compliance_checker.py  # Delisting, SEC
+└── halt_monitor.py        # Current/imminent halts
+```
+
+```python
+class UnifiedGuard:
+    async def assess(self, ticker: str, current_price: float, volatility: float) -> Assessment:
+        dilution = await self.dilution_detector.check(ticker)
+        compliance = await self.compliance_checker.check(ticker)
+        halt = await self.halt_monitor.check(ticker)
+
+        return Assessment(
+            dilution_profile=dilution,
+            compliance_profile=compliance,
+            halt_status=halt,
+            flags=self._compute_flags(dilution, compliance, halt)
+        )
+```
+
+### src/market_memory/ - MRP/EP Context
+
+```
+market_memory/
+├── __init__.py
+├── context_scorer.py      # MRP/EP calculation
+├── missed_tracker.py      # Track blocked signals
+├── pattern_learner.py     # Pattern analysis
+└── memory_store.py        # Persistence
+```
+
+```python
+# context_scorer.py
+
+def is_market_memory_stable() -> Tuple[bool, Dict]:
+    """Check if enough data to activate MRP/EP"""
+    stats = get_memory_status()
+
+    stable = (
+        stats["total_misses"] >= MIN_TOTAL_MISSES and
+        stats["trades_recorded"] >= MIN_TRADES_RECORDED and
+        stats["patterns_learned"] >= MIN_PATTERNS_LEARNED and
+        stats["ticker_profiles"] >= MIN_TICKER_PROFILES
+    )
+
+    return stable, stats
+
+def enrich_signal_with_context(signal: UnifiedSignal, force_enable: bool = False) -> None:
+    """Enrich signal with MRP/EP (O(1) lookup)"""
+    is_stable, _ = is_market_memory_stable()
+
+    if not is_stable and not force_enable:
+        signal.context_active = False
+        return
+
+    # Calculate MRP/EP
+    signal.context_mrp = calculate_mrp(signal.ticker)
+    signal.context_ep = calculate_ep(signal.ticker, signal.signal_type)
+    signal.context_confidence = get_data_confidence(signal.ticker)
+    signal.context_active = True
+```
+
+### src/pre_halt_engine.py - Halt Risk Detection
+
+```python
+class ExecutionRecommendation(Enum):
+    EXECUTE = "EXECUTE"       # Normal execution
+    WAIT = "WAIT"             # Wait for clarity
+    REDUCE = "REDUCE"         # Reduce position size
+    POST_HALT = "POST_HALT"   # Wait for post-halt
+    BLOCKED = "BLOCKED"       # Do not execute
+
+class PreHaltEngine:
+    def assess(self, ticker: str, current_price: float, volatility: float) -> PreHaltAssessment:
+        # Check volatility spike
+        # Check price move threshold
+        # Check news keywords
+        # Return state + recommendation
+        pass
+```
+
+### src/ibkr_news_trigger.py - Early News Alerts
+
+```python
+HALT_KEYWORDS = ["halt", "pending news", "acquired", "buyout", "merger", "fda approval"]
+SPIKE_KEYWORDS = ["surge", "jump", "spike", "rally", "unusual volume"]
+RISK_KEYWORDS = ["dilution", "offering", "sec investigation", "delisting"]
+
+class IBKRNewsTrigger:
+    def process_headline(self, ticker: str, headline: str) -> Optional[NewsTrigger]:
+        """Process headline for early alerts - NOT for scoring"""
+        level = self._detect_trigger_level(headline)
+
+        if level >= TriggerLevel.MEDIUM:
+            return NewsTrigger(
+                ticker=ticker,
+                headline=headline,
+                trigger_level=level,
+                trigger_type=self._classify_type(headline),
+                recommended_actions=self._get_actions(level)
+            )
+        return None
 ```
 
 ---
 
-## 🧪 Tests
+## Flow Complet V7
+
+### main.py - edge_cycle_v7()
+
+```python
+async def process_ticker_v7(ticker: str, state: V7State) -> Optional[UnifiedSignal]:
+    # 1. Get monster score and features
+    score_data = compute_monster_score(ticker)
+    features = compute_features(ticker)
+
+    # 2. Build detection input
+    detection_input = DetectionInput(
+        ticker=ticker,
+        current_price=current_price,
+        monster_score=score_data["monster_score"],
+        # ...
+    )
+
+    # 3. LAYER 1: Signal Producer (never blocked)
+    signal = await state.producer.detect(detection_input)
+
+    # 4. Pre-Halt Engine (sets pre_halt_state)
+    halt_assessment = state.pre_halt.assess(ticker, price, volatility)
+    signal.pre_halt_state = halt_assessment.pre_halt_state
+
+    # 5. MRP/EP Enrichment
+    enrich_signal_with_context(signal)
+
+    # 6. LAYER 2: Order Computer (always computed)
+    signal = state.computer.compute_order(signal, market_context)
+
+    # 7. Risk Guard (get flags)
+    risk_flags = await state.guard.assess(ticker, price, volatility)
+
+    # 8. LAYER 3: Execution Gate (only blocking layer)
+    signal = state.gate.evaluate(signal, risk_flags)
+
+    return signal
+```
+
+---
+
+## Tests
 
 ```bash
-# Test anticipation engine
-python src/anticipation_engine.py
+# Test V7 signal producer
+python -c "from src.engines.signal_producer import get_signal_producer; print('OK')"
 
-# Test news flow screener
-python src/news_flow_screener.py
+# Test order computer
+python -c "from src.engines.order_computer import get_order_computer; print('OK')"
 
-# Test options flow
-python src/options_flow_ibkr.py
+# Test execution gate
+python -c "from src.engines.execution_gate import get_execution_gate; print('OK')"
 
-# Test extended hours
-python src/extended_hours_quotes.py
+# Test risk guard
+python -c "from src.risk_guard import get_unified_guard; print('OK')"
 
-# Test pipeline complet
+# Test market memory
+python -c "from src.market_memory import is_market_memory_stable; print(is_market_memory_stable())"
+
+# Test full pipeline
 python tests/test_pipeline.py
 ```
 
 ---
 
-## 📊 Logs
+## Ajouter un Nouveau Module
 
-```
-data/logs/
-├── anticipation_engine.log
-├── news_flow_screener.log
-├── options_flow.log
-├── extended_hours.log
-├── monster_score.log
-├── signal_engine.log
-└── ...
-```
-
----
-
-## 🚀 Ajouter un Nouveau Module
-
-1. Créer `src/nouveau_module.py`
-2. Ajouter import dans `main.py`
-3. Intégrer dans la boucle appropriée (AH/PM/RTH)
+1. Creer le module dans `src/`
+2. Definir l'interface (input/output dataclasses)
+3. Integrer dans `main.py` au bon endroit du pipeline
 4. Ajouter tests dans `tests/`
 5. Documenter dans ce README
 
----
+### Regles V7
 
-## ⚠️ Règles Critiques
-
-1. **IBKR READ ONLY** : Jamais d'ordres automatiques
-2. **Grok Rate Limits** : Max ~300 calls/heure
-3. **Cache** : Utiliser `utils/cache.py` pour éviter calls redondants
-4. **Logs** : Toujours logger avec `utils/logger.py`
-
----
+- Detection ne bloque JAMAIS
+- Order est TOUJOURS calcule
+- Seul ExecutionGate peut bloquer
+- Raisons de blocage TOUJOURS visibles
+- Signaux bloques alimentent Market Memory
 
 ---
 
-## 📊 Flux de Données Scoring V5.3
+## Configuration
 
+### config.py - V7 Settings
+
+```python
+# V7.0 Architecture
+USE_V7_ARCHITECTURE = True
+
+# Execution Gate
+DAILY_TRADE_LIMIT = 5
+MAX_POSITION_PCT = 0.10
+MAX_TOTAL_EXPOSURE = 0.80
+MIN_ORDER_USD = 100
+
+# Pre-Halt Engine
+ENABLE_PRE_HALT_ENGINE = True
+PRE_HALT_VOLATILITY_THRESHOLD = 3.0
+PRE_HALT_PRICE_MOVE_THRESHOLD = 0.15
+
+# Risk Guard
+ENABLE_RISK_GUARD = True
+RISK_BLOCK_ON_CRITICAL = True
+RISK_BLOCK_ON_ACTIVE_OFFERING = True
+
+# Market Memory
+ENABLE_MARKET_MEMORY = True
+MARKET_MEMORY_MIN_MISSES = 50
+MARKET_MEMORY_MIN_TRADES = 30
+MARKET_MEMORY_MIN_PATTERNS = 10
 ```
-Universe Loader (300-500 tickers)
-        ↓
-Feature Engine + Event Hub + PM Scanner
-        ↓
-Pattern Analyzer + Options Flow + Social Buzz
-        ↓
-Monster Score V3 (8 composantes pondérées)
-├── event (25%)
-├── volume (17%)
-├── pattern (17%)
-├── pm_transition (13%)
-├── options_flow (10%)  ← NEW CORE
-├── momentum (8%)
-├── social_buzz (6%)    ← NEW CORE
-└── squeeze (4%)
-        ↓
-Signal Engine (BUY/BUY_STRONG/WATCH_EARLY)
-        ↓
-Portfolio Engine (risk management)
-        ↓
-Output (Telegram + SQLite + Dashboard)
-```
 
 ---
 
-**Version:** 5.3.0
-**Last Updated:** 2026-02-04
+## Regles Critiques
+
+1. **Detection JAMAIS bloquee** - SignalProducer produit toujours
+2. **Order TOUJOURS calcule** - OrderComputer calcule toujours
+3. **Execution seul point de blocage** - ExecutionGate unique gate
+4. **Transparence totale** - Raisons de blocage visibles
+5. **Apprentissage continu** - Misses alimentent Market Memory
+6. **IBKR READ ONLY** - Jamais d'ordres automatiques
+
+---
+
+**Version:** 7.0.0
+**Last Updated:** 2026-02-12

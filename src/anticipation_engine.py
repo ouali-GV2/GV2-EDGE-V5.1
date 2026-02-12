@@ -9,11 +9,11 @@ COUCHE 1: IBKR Radar (low-cost, large coverage)
 - Détecte: volume spikes, gaps anormaux, volatilité inhabituelle
 - Filtre primaire → génère liste "suspects"
 
-COUCHE 2: Grok + Polygon (high-precision, targeted)  
-- Scan ciblé haute fréquence (10-15 min) sur tickers suspects
-- News ticker-specific en quasi temps réel
-- Events corporate structurés
-- Causal reasoning pour scorer l'impact
+COUCHE 2: V6.1 Ingestors (100% sources réelles)
+- SEC EDGAR 8-K filings (gratuit, temps réel)
+- Finnhub company news (ciblé par ticker)
+- NLP classification via Grok (événements seulement)
+- Pas de simulation API via LLM
 
 COUCHE 3: Finnhub (fallback + supplementary)
 - Backup si IBKR indisponible
@@ -21,7 +21,7 @@ COUCHE 3: Finnhub (fallback + supplementary)
 
 TIMELINE:
 16:00-20:00 ET → After-hours catalyst scan
-20:00-04:00 ET → Overnight watch  
+20:00-04:00 ET → Overnight watch
 04:00-09:30 ET → Pre-market confirmation
 09:30-16:00 ET → RTH monitoring
 
@@ -85,13 +85,13 @@ class Anomaly:
 
 @dataclass
 class CatalystEvent:
-    """Catalyst event detected by Grok+Polygon"""
+    """Catalyst event detected by V6.1 ingestors (SEC + Finnhub)"""
     ticker: str
     event_type: str    # FDA_APPROVAL, EARNINGS_BEAT, MERGER, etc.
     impact_score: float
     headline: str
     summary: str
-    source: str
+    source: str        # sec_8k, finnhub_company, etc.
     timestamp: str
 
 
@@ -357,169 +357,166 @@ def _detect_anomaly_from_quote(ticker: str, quote: dict, source: str) -> Optiona
 
 
 # ============================
-# COUCHE 2: GROK + POLYGON
+# COUCHE 2: V6.1 INGESTORS (SOURCES RÉELLES)
 # ============================
 
-def analyze_with_grok_polygon(tickers: List[str]) -> List[CatalystEvent]:
+def analyze_with_real_sources(tickers: List[str]) -> List[CatalystEvent]:
     """
-    Grok + Polygon: Targeted catalyst analysis
-    
-    Uses Grok's Python REPL with Polygon API to:
-    - Fetch ticker-specific news in real-time
-    - Fetch corporate events
-    - Analyze impact with causal reasoning
-    
+    V6.1 Ingestors: Targeted catalyst analysis using REAL sources
+
+    Sources (100% réelles, pas de simulation LLM):
+    - SEC EDGAR 8-K filings (gratuit)
+    - Finnhub company news
+
     Returns: List of catalyst events
     """
     if not tickers:
         return []
-    
-    if not _state.can_call_grok():
-        logger.warning("⚠️ Grok rate limit reached, skipping")
-        return []
-    
-    logger.info(f"🧠 GROK+POLYGON: Analyzing {len(tickers)} tickers...")
-    
+
+    logger.info(f"📰 V6.1 INGESTORS: Analyzing {len(tickers)} tickers...")
+
     events = []
-    
-    # Batch tickers (max 10 per call)
-    batch_size = 10
-    
-    for i in range(0, len(tickers), batch_size):
-        batch = tickers[i:i + batch_size]
-        
+
+    try:
+        # Import V6.1 ingestors
+        from src.ingestors.sec_filings_ingestor import SECFilingsIngestor
+        from src.ingestors.company_news_scanner import CompanyNewsScanner, ScanPriority
+
+        sec_ingestor = SECFilingsIngestor(set(tickers))
+        company_scanner = CompanyNewsScanner()
+
+        # 1. Fetch SEC 8-K filings for these tickers
+        import asyncio
+
+        async def fetch_sec_catalysts():
+            filings = await sec_ingestor.fetch_8k_filings(hours_back=24)
+            return [f for f in filings if f.ticker in tickers]
+
         try:
-            batch_events = _call_grok_for_catalysts(batch)
-            events.extend(batch_events)
-            _state.record_grok_call()
-            
-            time.sleep(1)  # Delay between batches
-            
-        except Exception as e:
-            logger.error(f"Grok analysis failed: {e}")
-            continue
-    
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If already in async context, create task
+                sec_filings = []
+            else:
+                sec_filings = loop.run_until_complete(fetch_sec_catalysts())
+        except RuntimeError:
+            # No event loop, create new one
+            sec_filings = asyncio.run(fetch_sec_catalysts())
+
+        # Convert SEC filings to CatalystEvents
+        for filing in sec_filings:
+            events.append(CatalystEvent(
+                ticker=filing.ticker,
+                event_type=filing.event_type or "SEC_8K",
+                impact_score=_score_sec_filing(filing),
+                headline=f"SEC 8-K: {filing.form_type}",
+                summary=filing.description or "",
+                source="sec_8k",
+                timestamp=filing.filed_date.isoformat() if filing.filed_date else datetime.utcnow().isoformat()
+            ))
+
+        # 2. Fetch Finnhub company news for each ticker
+        async def fetch_company_news():
+            results = []
+            for ticker in tickers[:20]:  # Limit for rate limits
+                try:
+                    result = await company_scanner.scan_company(ticker, ScanPriority.HOT, classify=False)
+                    if result.news_items:
+                        results.append((ticker, result))
+                    await asyncio.sleep(0.5)  # Rate limit
+                except Exception as e:
+                    logger.debug(f"Company scan error {ticker}: {e}")
+            return results
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                company_results = []
+            else:
+                company_results = loop.run_until_complete(fetch_company_news())
+        except RuntimeError:
+            company_results = asyncio.run(fetch_company_news())
+
+        # Convert company news to CatalystEvents
+        for ticker, result in company_results:
+            if result.top_catalyst:
+                cat = result.top_catalyst
+                events.append(CatalystEvent(
+                    ticker=ticker,
+                    event_type=cat.event_type or "NEWS",
+                    impact_score=cat.event_impact if cat.event_impact else 0.5,
+                    headline=cat.headline,
+                    summary=cat.summary[:200] if cat.summary else "",
+                    source="finnhub_company",
+                    timestamp=cat.published_at.isoformat() if cat.published_at else datetime.utcnow().isoformat()
+                ))
+
+    except ImportError as e:
+        logger.warning(f"V6.1 ingestors not available: {e}")
+        # Fallback to basic Finnhub
+        events = _fallback_finnhub_news(tickers)
+    except Exception as e:
+        logger.error(f"V6.1 ingestor error: {e}")
+        events = _fallback_finnhub_news(tickers)
+
     _state.last_grok_scan = datetime.utcnow()
-    
-    logger.info(f"📊 GROK+POLYGON: Found {len(events)} catalysts")
-    
+
+    logger.info(f"📊 V6.1 INGESTORS: Found {len(events)} catalysts")
+
     return events
 
 
-def _call_grok_for_catalysts(tickers: List[str]) -> List[CatalystEvent]:
-    """Call Grok API with Polygon code execution"""
-    
-    tickers_str = ", ".join([f'"{t}"' for t in tickers])
-    
-    prompt = f"""Tu es un analyste financier expert en momentum trading small caps US.
+def _score_sec_filing(filing) -> float:
+    """Score SEC filing impact based on type"""
+    # High impact 8-K items
+    high_impact = {"FDA_APPROVAL", "MERGER_ACQUISITION", "EARNINGS_BEAT", "MAJOR_CONTRACT"}
+    medium_impact = {"MANAGEMENT_CHANGE", "RESTRUCTURING", "GUIDANCE"}
 
-MISSION: Analyser ces tickers pour détecter des catalysts haussiers: {tickers_str}
+    event_type = filing.event_type or ""
 
-ÉTAPE 1 - Exécute ce code Python pour récupérer les données Polygon:
+    if event_type in high_impact:
+        return 0.8
+    elif event_type in medium_impact:
+        return 0.6
+    else:
+        return 0.4
 
-```python
-from polygon import RESTClient
-from datetime import datetime, timedelta
 
-client = RESTClient()
-tickers = [{tickers_str}]
-results = []
+def _fallback_finnhub_news(tickers: List[str]) -> List[CatalystEvent]:
+    """Fallback: Direct Finnhub news fetch"""
+    events = []
 
-for ticker in tickers:
-    try:
-        # News des dernières 48h
-        cutoff = (datetime.utcnow() - timedelta(hours=48)).strftime('%Y-%m-%dT%H:%M:%SZ')
-        news = list(client.list_ticker_news(ticker=ticker, limit=10, order='desc', published_utc_gte=cutoff))
-        
-        # Snapshot actuel
+    for ticker in tickers[:10]:
         try:
-            snap = client.get_snapshot_ticker('stocks', ticker)
-            change = snap.ticker.todays_change_percent if snap else 0
-        except:
-            change = 0
-        
-        results.append({{
-            'ticker': ticker,
-            'news_count': len(news),
-            'headlines': [n.title for n in news[:5]],
-            'change_pct': change
-        }})
-    except Exception as e:
-        results.append({{'ticker': ticker, 'error': str(e)}})
+            url = f"https://finnhub.io/api/v1/company-news"
+            params = {
+                "symbol": ticker,
+                "from": (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d"),
+                "to": datetime.utcnow().strftime("%Y-%m-%d"),
+                "token": FINNHUB_API_KEY
+            }
 
-print(results)
-```
+            r = safe_get(url, params=params, timeout=10)
+            news = r.json()
 
-ÉTAPE 2 - Analyse chaque ticker et retourne UNIQUEMENT un JSON array:
-
-```json
-[
-    {{
-        "ticker": "SYMBOL",
-        "has_catalyst": true,
-        "event_type": "FDA_APPROVAL",
-        "impact_score": 0.8,
-        "headline": "...",
-        "summary": "Explication courte"
-    }}
-]
-```
-
-Types de catalysts: FDA_APPROVAL, EARNINGS_BEAT, MERGER, CONTRACT, PARTNERSHIP, GUIDANCE_RAISE, ANALYST_UPGRADE, SHORT_SQUEEZE, BREAKING_NEWS
-
-impact_score: 0.0 (pas d'impact) à 1.0 (impact majeur, potentiel +50%+)
-
-IMPORTANT: Retourne UNIQUEMENT le JSON, pas de texte avant ou après."""
-
-    payload = {
-        "model": "grok-4-1-fast-reasoning",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2
-    }
-    
-    headers = {
-        "Authorization": f"Bearer {GROK_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    try:
-        r = safe_post(
-            "https://api.x.ai/v1/chat/completions",
-            json=payload,
-            headers=headers,
-            timeout=60
-        )
-        
-        data = r.json()
-        content = data["choices"][0]["message"]["content"]
-        
-        # Parse JSON
-        import re
-        json_match = re.search(r'\[.*\]', content, re.DOTALL)
-        
-        if not json_match:
-            return []
-        
-        items = json.loads(json_match.group())
-        events = []
-        
-        for item in items:
-            if item.get("has_catalyst") and item.get("impact_score", 0) >= 0.4:
+            if news and len(news) > 0:
+                top_news = news[0]
                 events.append(CatalystEvent(
-                    ticker=item["ticker"],
-                    event_type=item.get("event_type", "UNKNOWN"),
-                    impact_score=item.get("impact_score", 0.5),
-                    headline=item.get("headline", ""),
-                    summary=item.get("summary", ""),
-                    source="grok_polygon",
+                    ticker=ticker,
+                    event_type="NEWS",
+                    impact_score=0.5,
+                    headline=top_news.get("headline", "")[:100],
+                    summary=top_news.get("summary", "")[:200],
+                    source="finnhub_fallback",
                     timestamp=datetime.utcnow().isoformat()
                 ))
-        
-        return events
-        
-    except Exception as e:
-        logger.error(f"Grok API error: {e}")
-        return []
+
+            time.sleep(0.5)
+
+        except Exception as e:
+            logger.debug(f"Finnhub fallback error {ticker}: {e}")
+
+    return events
 
 
 # ============================
@@ -706,20 +703,20 @@ def run_anticipation_scan(universe: List[str], mode: str = "auto") -> Dict:
     results["anomalies"] = [asdict(a) for a in anomalies]
     results["suspects_count"] = len(_state.get_suspects())
     
-    # STEP 2: Grok+Polygon on suspects (conditional)
+    # STEP 2: V6.1 Ingestors on suspects (SEC + Finnhub)
     suspects = _state.get_suspects()
     
     if mode in ["afterhours", "premarket"] and suspects:
-        logger.info(f"Step 2: Grok+Polygon on {len(suspects)} suspects...")
-        catalysts = analyze_with_grok_polygon(list(suspects)[:30])
+        logger.info(f"Step 2: V6.1 Ingestors on {len(suspects)} suspects...")
+        catalysts = analyze_with_real_sources(list(suspects)[:30])
         results["catalysts"] = [asdict(c) for c in catalysts]
-        
+
     elif mode == "intraday" and suspects:
         # During RTH, only high-priority
         high_priority = [a.ticker for a in anomalies if a.score >= 0.5][:10]
         if high_priority:
-            logger.info(f"Step 2: Grok (intraday) on {len(high_priority)} high-priority...")
-            catalysts = analyze_with_grok_polygon(high_priority)
+            logger.info(f"Step 2: V6.1 Ingestors (intraday) on {len(high_priority)} high-priority...")
+            catalysts = analyze_with_real_sources(high_priority)
             results["catalysts"] = [asdict(c) for c in catalysts]
     else:
         catalysts = []

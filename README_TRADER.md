@@ -1,276 +1,287 @@
-# 📊 GV2-EDGE V5.3 — Trader Guide
+# GV2-EDGE V7.0 - Trader Guide
 
-## 🎯 Objectif
+## Objectif
 
-GV2-EDGE détecte les top gainers small caps US **AVANT** leurs hausses majeures (+50% à +500%).
+GV2-EDGE detecte les top gainers small caps US **AVANT** leurs hausses majeures (+50% a +500%).
 
 **Cible** : Small caps < $2B market cap, hors OTC
 
 ---
 
-## 🆕 Nouveautés V5.3
+## Nouveautes V7.0
 
-### Monster Score - Nouvelles Composantes
+### Transparence Totale
 
-Le score inclut maintenant **8 facteurs** pondérés :
+**V7 montre TOUS les signaux, meme ceux bloques**
 
-| Composante | Poids | Description |
-|------------|-------|-------------|
-| Event | 25% | Catalysts (earnings, FDA, M&A) |
-| Volume | 17% | Volume spikes vs moyenne |
-| Pattern | 17% | Patterns techniques (consolidation, flags) |
-| PM Transition | 13% | Qualité transition pre-market → RTH |
-| **Options Flow** | **10%** | Activité options (volume, concentration calls) |
-| Momentum | 8% | Momentum prix |
-| **Social Buzz** | **6%** | Mentions Twitter, Reddit, StockTwits |
-| Squeeze | 4% | Bollinger squeeze |
+| Avant (V6) | Apres (V7) |
+|------------|------------|
+| Signal bloque = invisible | Signal bloque = visible avec raison |
+| Pas de tracking des misses | Tracking complet pour apprentissage |
+| Blocage a plusieurs niveaux | Blocage uniquement a l'execution |
 
-### Impact pour le Trading
+### 3 Couches de Pipeline
 
-- **Options Flow élevé** (>0.5) = Smart money potentiel
-- **Social Buzz spike** (>0.7) = Attention retail croissante
-- Ces facteurs peuvent confirmer ou renforcer un signal
+| Couche | Module | Bloque? | Visible? |
+|--------|--------|---------|----------|
+| 1 | SignalProducer | NON | OUI |
+| 2 | OrderComputer | NON | OUI |
+| 3 | ExecutionGate | OUI | OUI (avec raison) |
 
----
+### Nouvelles Metriques
 
-## 🚦 Signaux (du plus précoce au plus confirmé)
-
-### 👀 WATCH_EARLY (NOUVEAU V5)
-- **Quand** : Catalyst détecté en after-hours/pre-market
-- **Signification** : Potentiel en formation, pas encore confirmé
-- **Action** : Surveiller, préparer entry
-- **Sizing** : Aucun (attendre upgrade)
-
-### 📊 BUY
-- **Quand** : Score 0.65-0.79 + confirmation technique
-- **Signification** : Setup solide, probabilité élevée
-- **Action** : Entry standard
-- **Sizing** : Position normale (2% risk)
-
-### 🚨 BUY_STRONG
-- **Quand** : Score 0.80+ + catalyst fort + confirmation
-- **Signification** : Opportunité majeure
-- **Action** : Entry immédiate
-- **Sizing** : Position max (3% risk)
-
-### ⏸️ HOLD
-- **Signification** : Pas d'opportunité claire
-- **Action** : Ignorer
+| Metrique | Description |
+|----------|-------------|
+| **MRP** | Missed Recovery Potential - score base sur misses precedents |
+| **EP** | Edge Probability - probabilite de succes |
+| **Pre-Halt State** | Risque de halt (NORMAL/ELEVATED/HIGH) |
+| **Block Reasons** | Pourquoi l'execution est bloquee |
 
 ---
 
-## ⏰ Timeline de Détection V5.1
+## Signaux V7
 
-```
-16:00-20:00 ET │ AFTER-HOURS
-              │ ├─ News Flow Screener actif
-              │ ├─ Extended Hours gaps détectés
-              │ ├─ Options Flow analysé
-              │ └─ Signaux: WATCH_EARLY
-              │
-04:00-09:30 ET │ PRE-MARKET
-              │ ├─ Confirmation des gaps
-              │ ├─ Volume PM analysé
-              │ ├─ Upgrades: WATCH_EARLY → BUY
-              │ └─ Signaux: BUY, BUY_STRONG
-              │
-09:30-16:00 ET │ RTH (Regular Trading Hours)
-              │ ├─ Monitoring positions
-              │ ├─ Breakout confirmation
-              │ └─ Signaux: BUY_STRONG (tardifs)
-```
+### BUY_STRONG
+
+- **Quand**: Score 0.80+ + catalyst fort
+- **Execution**: Si autorise par ExecutionGate
+- **MRP/EP**: Affiche si actif
+- **Action**: Entry immediate si autorise
+- **Sizing**: 3% risk max
+
+### BUY
+
+- **Quand**: Score 0.65-0.79 + confirmation technique
+- **Execution**: Si autorise par ExecutionGate
+- **Action**: Entry standard si autorise
+- **Sizing**: 2% risk
+
+### WATCH
+
+- **Quand**: Potentiel detecte, pas encore confirme
+- **Execution**: Non (observation seulement)
+- **Action**: Surveiller, preparer entry
+- **Sizing**: 0% (pas d'entry)
+
+### Signal BLOQUE
+
+- **Quand**: ExecutionGate refuse l'execution
+- **Visible**: OUI (avec raisons)
+- **Action**: Comprendre la raison, noter pour apprentissage
+- **Raisons possibles**:
+  - `DAILY_TRADE_LIMIT` - Max trades du jour atteint
+  - `CAPITAL_INSUFFICIENT` - Pas assez de capital
+  - `PRE_HALT_HIGH` - Risque de halt eleve
+  - `DILUTION_HIGH` - Risque de dilution
+  - `COMPLIANCE_HIGH` - Risque compliance
 
 ---
 
-## 📱 Alertes Telegram
+## Alertes Telegram V7
 
-### Format WATCH_EARLY
+### Format Signal Autorise
+
 ```
-👀 WATCH_EARLY: NVDA
+[SIGNAL_EMOJI] GV2-EDGE V7.0 SIGNAL
 
-📊 Score: 0.55
-├─ Catalyst: EARNINGS_BEAT
-├─ Impact: 0.7
-└─ Urgency: MEDIUM
+Ticker: NVDA
+Signal: BUY_STRONG
+Monster Score: 0.85
 
-📰 "NVIDIA beats Q4 expectations..."
+--- V7 Intelligence ---
+Pre-Halt: NORMAL
+MRP: 72 | EP: 68
 
-⏰ Session: AFTER-HOURS
-💡 Action: Surveiller PM confirmation
-```
+--- Position ---
+Entry: $152.50
+Stop: $148.20
+Shares: 45
+Risk: $193.50
 
-### Format BUY
-```
-📊 BUY: NVDA
-
-📊 Monster Score: 0.72
-├─ Technical: 0.65
-├─ Fundamental: 0.78
-└─ AH Boost: +0.05
-
-📅 Catalyst: EARNINGS_BEAT
-📈 PM Gap: +5.2%
-
-💰 Trade Plan:
-├─ Entry: $152.50
-├─ Stop: $148.20 (-2.8%)
-├─ Target 1: $165 (+8.2%)
-└─ Risk: 2% capital
-
-⏰ Execute: PM OPEN
+V7.0 | NORMAL
 ```
 
-### Format BUY_STRONG
+### Format Signal Bloque
+
 ```
-🚨 BUY_STRONG: NVDA
+[NO_ENTRY] GV2-EDGE V7.0 SIGNAL
 
-📊 Monster Score: 0.85
-├─ Technical: 0.80
-├─ Fundamental: 0.88
-└─ Options Flow: BULLISH
+Ticker: BIOX
+Signal: BUY (BLOCKED)
+Monster Score: 0.72
 
-📅 Catalyst: FDA_APPROVAL
-📈 PM Gap: +12.5%
-🔥 Volume: 5x average
+--- V7 Intelligence ---
+Pre-Halt: ELEVATED
 
-💰 Trade Plan:
-├─ Entry: $165.00 (MARKET)
-├─ Stop: $158.00 (-4.2%)
-├─ Target: $200+ (+21%)
-└─ Risk: 3% capital (MAX)
+BLOCKED: DAILY_TRADE_LIMIT, PRE_HALT_ELEVATED
 
-⏰ Execute: IMMEDIATELY
+Signal detecte mais execution bloquee
 ```
 
 ---
 
-## 🎯 Stratégie d'Entrée Recommandée
+## Pre-Halt State
 
-### Pour WATCH_EARLY
-1. **Ne pas entrer** immédiatement
-2. Mettre le ticker en watchlist
-3. Attendre confirmation PM :
-   - Gap > 3%
-   - Volume PM élevé
-   - Prix tient au-dessus du gap
-4. Si confirmé → entry sur upgrade à BUY
+| State | Signification | Action |
+|-------|---------------|--------|
+| NORMAL | Pas de risque detecte | Execute normal |
+| ELEVATED | Volatilite anormale | Taille reduite 50% |
+| HIGH | Risque de halt imminent | Execution bloquee |
 
-### Pour BUY
-1. Entry au prix indiqué (limit order)
-2. Stop-loss obligatoire
-3. Sizing : 2% du capital à risque
-4. Target : selon plan
+### Indicateurs Pre-Halt
 
-### Pour BUY_STRONG
-1. Entry immédiate (market order OK)
-2. Stop-loss plus large (volatilité)
-3. Sizing : jusqu'à 3% du capital à risque
-4. Trailing stop recommandé
+- Volatilite > 3x moyenne
+- Mouvement prix > 15% intraday
+- Keywords halt dans news
+- Volume anormal
 
 ---
 
-## 📊 Catalysts par Impact
+## MRP/EP (Market Memory)
 
-| Type | Impact Typique | Timing |
-|------|----------------|--------|
-| FDA_APPROVAL | +50% à +200% | Immédiat |
-| MERGER/ACQUISITION | +30% à +100% | 1-3 jours |
-| EARNINGS_BEAT | +20% à +80% | PM/RTH open |
-| GUIDANCE_RAISE | +15% à +50% | PM/RTH open |
-| CONTRACT_WIN | +10% à +40% | Variable |
-| ANALYST_UPGRADE | +5% à +20% | Variable |
+### MRP (Missed Recovery Potential)
+
+Score 0-100 base sur les signaux manques precedents:
+- MRP eleve = ce ticker a souvent ete manque et a bien performe
+- Utilise pour ajuster la confiance
+
+### EP (Edge Probability)
+
+Score 0-100 base sur patterns similaires:
+- EP eleve = patterns similaires ont bien performe
+- Utilise pour sizing
+
+### Activation
+
+MRP/EP s'activent UNIQUEMENT quand Market Memory a assez de donnees:
+- 50+ misses tracked
+- 30+ trades recorded
+- 10+ patterns learned
+- 20+ ticker profiles
+
+Avant activation: `context_active = False`
 
 ---
 
-## ⚠️ Risk Management
+## Raisons de Blocage
 
-### Règles d'Or
-1. **Stop-loss toujours** : Jamais de position sans stop
-2. **Max 5 positions** : Diversification obligatoire
-3. **Max 3% risk/trade** : Même sur BUY_STRONG
-4. **Cut losses fast** : Si stop touché, sortir sans hésiter
+### DAILY_TRADE_LIMIT
+
+- **Cause**: Max 5 trades/jour atteint
+- **Solution**: Attendre demain
+- **Note**: Signal track pour Market Memory
+
+### CAPITAL_INSUFFICIENT
+
+- **Cause**: Pas assez de cash disponible
+- **Solution**: Liberer du capital
+- **Note**: Position existante bloque les fonds
+
+### PRE_HALT_HIGH
+
+- **Cause**: Risque de halt detecte
+- **Solution**: Attendre stabilisation
+- **Note**: Protege contre halt losses
+
+### DILUTION_HIGH
+
+- **Cause**: ATM offering detecte
+- **Solution**: Eviter ou reduire taille
+- **Note**: Risk Guard protection
+
+### COMPLIANCE_HIGH
+
+- **Cause**: Risque delisting/SEC
+- **Solution**: Eviter
+- **Note**: Protection compliance
+
+---
+
+## Timeline V7
+
+```
+16:00-20:00 ET | AFTER-HOURS
+             | - Detection anticipative
+             | - News scanning
+             | - Signaux: WATCH, BUY (rare)
+
+04:00-09:30 ET | PRE-MARKET
+             | - Confirmation PM
+             | - V7 cycle (detection + execution)
+             | - Signaux: BUY, BUY_STRONG
+
+09:30-16:00 ET | RTH
+             | - V7 cycle every 3 min
+             | - Tous signaux possibles
+             | - Execution Gate active
+
+20:30 UTC     | DAILY AUDIT
+             | - Performance du jour
+             | - Blocked vs Allowed ratio
+```
+
+---
+
+## Risk Management V7
+
+### Regles d'Or
+
+1. **Stop-loss toujours**: Jamais de position sans stop
+2. **Max 5 trades/jour**: Applique par ExecutionGate
+3. **Max 10% par position**: Protection capital
+4. **Pre-Halt respect**: Si HIGH, pas d'entry
+5. **Comprendre les blocks**: Apprendre des raisons
 
 ### Sizing par Signal
 
-| Signal | Risk Max | Position Typique |
-|--------|----------|------------------|
-| WATCH_EARLY | 0% | Pas de position |
-| BUY | 2% | $2k sur $100k |
-| BUY_STRONG | 3% | $3k sur $100k |
+| Signal | Condition | Sizing |
+|--------|-----------|--------|
+| BUY_STRONG | Autorise | 3% risk |
+| BUY_STRONG | Pre-Halt ELEVATED | 1.5% risk |
+| BUY | Autorise | 2% risk |
+| BUY | Pre-Halt ELEVATED | 1% risk |
+| BLOCKED | - | 0% |
 
 ---
 
-## 📈 Performance Attendue
+## Dashboard V7
 
-| Métrique | Cible V5.1 |
-|----------|-----------|
-| Hit Rate | 50-65% |
-| Early Catch (>2h avant) | 60-75% |
-| Avg Win | +45-80% |
-| Avg Loss | -8-15% |
-| Win/Loss Ratio | 3:1 |
-| Lead Time | 6-12h |
+Le dashboard affiche:
 
----
+- **V7 Modules Status**: SignalProducer, OrderComputer, ExecutionGate, RiskGuard
+- **Execution Stats**: Allowed vs Blocked ratio
+- **Block Reasons**: Distribution des raisons
+- **Market Memory Status**: MRP/EP activation state
+- **Pre-Halt Alerts**: Tickers avec risque halt
 
-## 🔔 Sessions Clés
-
-### After-Hours (16:00-20:00 ET)
-- **Focus** : Détection précoce
-- **Alertes** : WATCH_EARLY
-- **Action** : Préparer watchlist
-
-### Pre-Market (04:00-09:30 ET)
-- **Focus** : Confirmation + entry
-- **Alertes** : BUY, BUY_STRONG
-- **Action** : Exécuter trades
-
-### RTH (09:30-16:00 ET)
-- **Focus** : Gestion positions
-- **Alertes** : BUY_STRONG (rares)
-- **Action** : Trailing stops, targets
+```bash
+streamlit run dashboards/streamlit_dashboard.py
+```
 
 ---
 
----
+## Performance V7
 
-## 📊 Interpréter les Composantes V5.3
-
-### Options Flow (10%)
-
-| Score | Signification | Action |
-|-------|---------------|--------|
-| 0.0-0.3 | Activité normale | Neutre |
-| 0.3-0.6 | Activité légèrement élevée | Surveiller |
-| 0.6-0.8 | Activité inhabituelle | Confirme le signal |
-| 0.8-1.0 | Activité très élevée (smart money?) | Renforce confiance |
-
-**Signaux positifs** :
-- `HIGH_CALL_VOLUME` : Volume calls >= 5000
-- `LOW_PC_RATIO` : Put/Call < 0.5 (bullish)
-- `CALL_CONCENTRATION` : 70%+ du volume en calls
-
-### Social Buzz (6%)
-
-| Score | Signification | Action |
-|-------|---------------|--------|
-| 0.0-0.3 | Buzz normal | Neutre |
-| 0.3-0.5 | Buzz croissant | Surveiller |
-| 0.5-0.7 | Buzz élevé | Attention retail |
-| 0.7-1.0 | Viral/Trending | Prudence (late?) |
-
-**Sources** : Twitter (35%), Reddit WSB (25%), StockTwits (20%), Google Trends (20%)
+| Metrique | Cible |
+|----------|-------|
+| Detection Rate | 100% (jamais bloque) |
+| Execution Rate | 60-80% |
+| Hit Rate | 70-80% |
+| Early Catch | 60-70% |
+| Avg Win | +50-90% |
+| Avg Loss | -8-12% |
 
 ---
 
-## 🔗 Ressources
+## Conseils V7
 
-- **Installation** : Voir `DEPLOYMENT.md`
-- **Architecture** : Voir `README_DEV.md`
-- **Configuration** : Voir `config.py`
-- **Dashboard** : `streamlit run dashboards/streamlit_dashboard.py`
+1. **Lisez les raisons de blocage** - Elles sont la pour vous proteger
+2. **Respectez Pre-Halt** - Ne forcez pas si HIGH
+3. **Utilisez MRP/EP** - Quand actif, c'est un edge supplementaire
+4. **Track vos misses** - Ils alimentent Market Memory
+5. **Attendez l'activation** - MRP/EP dormants au debut = normal
 
 ---
 
-**Version:** 5.3.0
-**Last Updated:** 2026-02-04
+**Version:** 7.0.0
+**Last Updated:** 2026-02-12
