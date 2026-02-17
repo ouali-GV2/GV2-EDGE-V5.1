@@ -21,7 +21,7 @@ GV2-EDGE est un systeme de **detection anticipative** des top gainers small-cap 
 
 **Cible de marche** :
 - Small caps US (market cap < $2B)
-- Prix $0.50 - $50
+- Prix $0.50 - $20
 - Catalysts : FDA, M&A, Earnings, Contracts, Short Squeeze
 - Sessions : Pre-market (04:00-09:30 ET), RTH (09:30-16:00 ET), After-hours (16:00-20:00 ET)
 
