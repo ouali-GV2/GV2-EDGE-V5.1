@@ -2,7 +2,7 @@
 
 > **Version** : V8.0 (Architecture V7.0 + Acceleration Engine V8)
 > **Derniere mise a jour** : 2026-02-17
-> **Deploiement** : Hetzner CX33 (headless Linux) + IBKR Gateway (optionnel)
+> **Deploiement** : Hetzner CX43 (8 vCPU, 16 Go RAM, 160 Go SSD, headless Linux) + IBKR Gateway
 > **Langage** : Python 3.11+ (asyncio + threading)
 
 ---
@@ -387,11 +387,16 @@ SmallCap Radar Phases:
 
 ### 6.1 Donnees de marche
 
-| Source | Type | Rate Limit | Cout |
-|--------|------|-----------|------|
-| IBKR Level 1 | TCP socket (ib-insync) | Illimite | Abonnement |
-| Finnhub REST | Polling HTTP | 60 req/min (free) | Gratuit |
-| Finnhub WebSocket | Streaming | A implementer | Gratuit |
+**Abonnements IBKR actifs :**
+- L1 US Equities — Network A (NYSE), Network B (ARCA/BATS), Network C (NASDAQ)
+- OPRA — Options US (flux complet)
+
+| Source | Type | Rate Limit | Cout | Statut |
+|--------|------|-----------|------|--------|
+| IBKR Level 1 | TCP socket (ib-insync) | Illimite | Abonnement actif | **SOURCE PRIMAIRE** |
+| IBKR OPRA | Options chain via ib-insync | Illimite | Abonnement actif | **SOURCE PRIMAIRE** |
+| Finnhub REST | Polling HTTP | 60 req/min (free) | Gratuit | Fallback |
+| Finnhub WebSocket | Streaming | A implementer | Gratuit | Planifie |
 
 ### 6.2 News & Catalysts
 
@@ -478,7 +483,7 @@ Triggers pour devenir HOT :
 | Flag | Default | Ligne | Description |
 |------|---------|-------|-------------|
 | `USE_V7_ARCHITECTURE` | True | 357 | Pipeline V7 unifie |
-| `USE_IBKR_DATA` | False | 17 | Donnees IBKR (requiert Gateway) |
+| `USE_IBKR_DATA` | **True** | 17 | Donnees IBKR (L1 + OPRA actifs) |
 | `ENABLE_ACCELERATION_ENGINE` | True | 441 | V8 derivees + z-scores |
 | `ENABLE_SMALLCAP_RADAR` | True | 457 | V8 radar anticipatif |
 | `ENABLE_PRE_HALT_ENGINE` | True | 372 | Evaluation risque halt |
@@ -590,9 +595,9 @@ Triggers pour devenir HOT :
 
 ### 11.6 Deploiement
 
-- **Serveur** : Hetzner CX33 (headless Linux 4.4.0)
-- **IBKR** : Optionnel (USE_IBKR_DATA=False par defaut)
-- **Fallback** : Finnhub REST si pas d'IBKR
+- **Serveur** : Hetzner CX43 — 8 vCPU, 16 Go RAM, 160 Go SSD (headless Linux 4.4.0)
+- **IBKR** : Actif (USE_IBKR_DATA=True) — L1 US Equities (Network A/B/C) + OPRA Options US
+- **Fallback** : Finnhub REST si IBKR Gateway deconnecte
 - **Alertes** : Telegram (token + chat_id via .env)
 - **Logs** : `data/logs/` avec rotation
 - **Persistance** : SQLite (`data/*.db`) + JSON + CSV
