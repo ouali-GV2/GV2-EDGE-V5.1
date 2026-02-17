@@ -57,7 +57,11 @@ logger = logging.getLogger(__name__)
 SMALLCAP_MAX_MARKET_CAP = 2_000_000_000     # $2B
 SMALLCAP_MIN_PRICE = 0.50                    # $0.50
 SMALLCAP_MAX_PRICE = 20.00                   # $20
-SMALLCAP_MIN_AVG_VOLUME = 500_000            # 500K daily
+# C2 FIX: Removed SMALLCAP_MIN_AVG_VOLUME = 500_000
+# This filter was redundant (universe_loader already filters) and blocked
+# low-float tickers that are prime top gainer candidates.
+# Volume quality is assessed dynamically via z-scores instead.
+SMALLCAP_MIN_AVG_VOLUME = 50_000             # 50K daily (minimal liquidity only)
 SMALLCAP_MAX_FLOAT = 100_000_000             # 100M shares
 
 # Radar sensitivity levels

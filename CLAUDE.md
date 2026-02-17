@@ -134,7 +134,9 @@ GV2-EDGE-V7.0/
 │   ├── signal_logger.py                # Log persistant signaux (SQLite)
 │   ├── social_buzz.py                  # Tracker buzz social (Reddit, StockTwits)
 │   ├── universe_loader.py              # Chargement univers V3 (1 API call, ~3000 tickers)
-│   └── watch_list.py                   # Watchlist calendrier (J-7 → J-Day)
+│   ├── watch_list.py                   # Watchlist calendrier (J-7 → J-Day)
+│   ├── finnhub_ws_screener.py          # [C1] WebSocket streaming Finnhub (remplace polling)
+│   └── top_gainers_source.py           # [C8] Source externe top gainers (IBKR + Yahoo)
 │
 │   ├── engines/                         # Moteurs V7/V8 (coeur du systeme)
 │   │   ├── signal_producer.py           # LAYER 1: Detection illimitee V8
@@ -521,30 +523,30 @@ Triggers pour devenir HOT :
 
 | ID | Probleme | Severite | Statut |
 |----|----------|----------|--------|
-| P1 | Finnhub 60 req/min → 6% couverture/cycle | CRITIQUE | A corriger |
-| P2 | Feature Engine exige 20 bars minimum | HAUT | A corriger |
-| P3 | NO_SIGNAL si score < 0.40 sans catalyst | HAUT | A corriger |
-| P4 | SmallCap Radar filtre volume 500K redondant | MOYEN | A corriger |
-| P5 | Batch limits durs dans anticipation_engine | MOYEN | A corriger |
-| P6 | Aucun flux streaming (tout est polling) | CRITIQUE | A corriger |
-| P7 | Acceleration Engine : 3+ samples minimum | MOYEN | A corriger |
-| P8 | Alert cooldown fixe 2 min | MOYEN | A corriger |
-| P9 | Hot ticker TTL 1h expire | MOYEN | A corriger |
-| P10 | Aucune source externe top gainers | MOYEN | A corriger |
+| P1 | Finnhub 60 req/min → 6% couverture/cycle | CRITIQUE | CORRIGE (C1) |
+| P2 | Feature Engine exige 20 bars minimum | HAUT | CORRIGE (C9) |
+| P3 | NO_SIGNAL si score < 0.40 sans catalyst | HAUT | CORRIGE (C3) |
+| P4 | SmallCap Radar filtre volume 500K redondant | MOYEN | CORRIGE (C2) |
+| P5 | Batch limits durs dans anticipation_engine | MOYEN | CORRIGE (C7) |
+| P6 | Aucun flux streaming (tout est polling) | CRITIQUE | CORRIGE (C1) |
+| P7 | Acceleration Engine : 3+ samples minimum | MOYEN | CORRIGE (C4) |
+| P8 | Alert cooldown fixe 2 min | MOYEN | CORRIGE (C5) |
+| P9 | Hot ticker TTL 1h expire | MOYEN | CORRIGE (C6) |
+| P10 | Aucune source externe top gainers | MOYEN | CORRIGE (C8) |
 
 ### 10.2 Corrections prevues (PLAN_CORRECTION_COVERAGE.md)
 
-| ID | Correction | Phase | Statut |
-|----|-----------|-------|--------|
-| C1 | WebSocket Screener (Finnhub WS) | Phase 3 | Planifie |
-| C2 | Supprimer filtres SmallCap Radar | Phase 1 | Planifie |
-| C3 | Score plancher adaptatif (vol z > 2.5) | Phase 2 | Planifie |
-| C4 | Warm-up accelere (2 samples) | Phase 4 | Planifie |
-| C5 | Alert cooldown adaptatif (15-120s) | Phase 1 | Planifie |
-| C6 | Hot Ticker TTL 4h + auto-renewal | Phase 1 | Planifie |
-| C7 | Relever batch limits anticipation | Phase 2 | Planifie |
-| C8 | Source externe top gainers (IBKR+Yahoo) | Phase 4 | Planifie |
-| C9 | Feature Engine 5 bars minimum | Phase 1 | Planifie |
+| ID | Correction | Fichier modifie | Statut |
+|----|-----------|-----------------|--------|
+| C1 | WebSocket Screener (Finnhub WS) | `src/finnhub_ws_screener.py` (NEW) | FAIT |
+| C2 | Supprimer filtres SmallCap Radar | `src/engines/smallcap_radar.py` | FAIT |
+| C3 | Score plancher adaptatif (vol z > 2.5) | `src/engines/signal_producer.py` | FAIT |
+| C4 | Warm-up accelere (2 samples) | `src/engines/acceleration_engine.py` | FAIT |
+| C5 | Alert cooldown adaptatif (15-120s) | `src/engines/acceleration_engine.py` | FAIT |
+| C6 | Hot Ticker TTL 4h + auto-renewal | `src/schedulers/hot_ticker_queue.py` | FAIT |
+| C7 | Relever batch limits anticipation | `src/anticipation_engine.py` | FAIT |
+| C8 | Source externe top gainers (IBKR+Yahoo) | `src/top_gainers_source.py` (NEW) | FAIT |
+| C9 | Feature Engine 5 bars minimum | `src/feature_engine.py` | FAIT |
 
 ### 10.3 Fichiers de reference
 

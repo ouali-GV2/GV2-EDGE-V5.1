@@ -56,8 +56,18 @@ BREAKOUT_READINESS_THRESHOLD = 0.50    # Min readiness for launch alert
 TRANSITION_ACCUMULATING_TO_LAUNCHING = 0.60  # Readiness needed
 TRANSITION_LAUNCHING_TO_BREAKOUT = 0.80
 
-# Alert cooldown (prevent spam)
-ALERT_COOLDOWN_SECONDS = 120  # 2 min between alerts for same ticker
+# C5 FIX: Adaptive alert cooldown (was fixed 120s)
+# BREAKOUT/LAUNCHING = 15s (urgent, need fast updates)
+# ACCUMULATING = 60s (moderate, building up)
+# Default = 120s (low activity)
+ALERT_COOLDOWN_BY_STATE = {
+    "BREAKOUT": 15,
+    "LAUNCHING": 30,
+    "ACCUMULATING": 60,
+    "DORMANT": 120,
+    "EXHAUSTED": 120,
+}
+ALERT_COOLDOWN_DEFAULT = 120
 
 
 # ============================================================================
@@ -203,7 +213,10 @@ class AccelerationEngine:
         ticker = ticker.upper()
         ds = self._buffer.get_derivative_state(ticker)
 
-        if ds.samples < 3 or ds.confidence < 0.2:
+        # C4 FIX: Reduced from 3 to 2 samples minimum for warm-up
+        # 2 samples is enough to compute a first derivative (velocity).
+        # Acceleration (2nd derivative) needs 3, but velocity alone is valuable.
+        if ds.samples < 2 or ds.confidence < 0.2:
             return AccelerationScore(state="DORMANT", confidence=0.0, samples=ds.samples)
 
         # Compute composite acceleration score
@@ -232,14 +245,15 @@ class AccelerationEngine:
         now = datetime.utcnow()
 
         for ticker in tickers:
-            # Cooldown check
-            last = self._last_alerts.get(ticker)
-            if last and (now - last).total_seconds() < ALERT_COOLDOWN_SECONDS:
-                continue
-
             ds = self._buffer.get_derivative_state(ticker)
 
             if ds.samples < 5 or ds.confidence < 0.3:
+                continue
+
+            # C5 FIX: Adaptive cooldown based on current state
+            cooldown = ALERT_COOLDOWN_BY_STATE.get(ds.state, ALERT_COOLDOWN_DEFAULT)
+            last = self._last_alerts.get(ticker)
+            if last and (now - last).total_seconds() < cooldown:
                 continue
 
             alert = self._evaluate_for_alert(ticker, ds, now)

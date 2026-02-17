@@ -373,6 +373,16 @@ class SignalProducer:
         ):
             return SignalType.EARLY_SIGNAL
 
+        # C3 FIX: Adaptive score floor for high volume z-score
+        # Problem P3: tickers with volume z > 2.5 but no catalyst get NO_SIGNAL
+        # even though abnormal volume alone is a strong precursor signal.
+        # If volume z-score > 2.5, allow EARLY_SIGNAL even without catalyst.
+        if (
+            input_data.volume_zscore > 2.5
+            and adjusted_score >= self.thresholds["EARLY_SIGNAL"] * 0.80
+        ):
+            return SignalType.EARLY_SIGNAL
+
         return SignalType.NO_SIGNAL
 
     def _calculate_confidence(
