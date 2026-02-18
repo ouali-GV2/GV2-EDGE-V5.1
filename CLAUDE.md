@@ -136,7 +136,8 @@ GV2-EDGE-V7.0/
 │   ├── universe_loader.py              # Chargement univers V3 (1 API call, ~3000 tickers)
 │   ├── watch_list.py                   # Watchlist calendrier (J-7 → J-Day)
 │   ├── finnhub_ws_screener.py          # [C1] WebSocket streaming Finnhub (remplace polling)
-│   └── top_gainers_source.py           # [C8] Source externe top gainers (IBKR + Yahoo)
+│   ├── top_gainers_source.py           # [C8] Source externe top gainers (IBKR + Yahoo)
+│   └── ibkr_streaming.py              # [V9] Streaming temps reel IBKR (event-driven, ~10ms)
 │
 │   ├── engines/                         # Moteurs V7/V8 (coeur du systeme)
 │   │   ├── signal_producer.py           # LAYER 1: Detection illimitee V8
@@ -395,10 +396,11 @@ SmallCap Radar Phases:
 
 | Source | Type | Rate Limit | Cout | Statut |
 |--------|------|-----------|------|--------|
-| IBKR Level 1 | TCP socket (ib-insync) | Illimite | Abonnement actif | **SOURCE PRIMAIRE** |
+| IBKR Streaming | Event-driven (pendingTickersEvent) | Illimite | Abonnement actif | **SOURCE PRIMAIRE V9** |
+| IBKR Level 1 | TCP socket (ib-insync) | Illimite | Abonnement actif | Fallback (poll mode) |
 | IBKR OPRA | Options chain via ib-insync | Illimite | Abonnement actif | **SOURCE PRIMAIRE** |
 | Finnhub REST | Polling HTTP | 60 req/min (free) | Gratuit | Fallback |
-| Finnhub WebSocket | Streaming | A implementer | Gratuit | Planifie |
+| Finnhub WebSocket | Streaming (wss://ws.finnhub.io) | Illimite (1 conn) | Gratuit | Fallback streaming |
 
 ### 6.2 News & Catalysts
 
@@ -554,6 +556,7 @@ Triggers pour devenir HOT :
 |----------|---------|
 | `PLAN_TRANSFORMATION_V8.md` | Plan transformation V7 → V8 |
 | `PLAN_CORRECTION_COVERAGE.md` | Corrections couverture 100% top gainers |
+| `PLAN_AMELIORATION_V9.md` | Plan amelioration V9 complet (21 ameliorations, 5 sprints) |
 | `CLAUDE.md` | Ce fichier — reference systeme |
 
 ---
@@ -565,7 +568,7 @@ Triggers pour devenir HOT :
 - **Detection JAMAIS bloquee** — seule l'execution a des limites
 - **Additif, pas multiplicatif** — les boosts s'ajoutent, les penalites utilisent MIN
 - **Fallback systematique** — IBKR → Finnhub → Cache → Default
-- **Singleton pattern** — `get_ibkr()`, `get_v7_state()`, `get_signal_producer()`
+- **Singleton pattern** — `get_ibkr()`, `get_ibkr_streaming()`, `get_signal_producer()`
 - **Async + Thread-safe** — asyncio pour I/O, threading pour background
 
 ### 11.2 Sources de donnees
@@ -628,4 +631,5 @@ Triggers pour devenir HOT :
 | **PM Transition** | Qualite de la transition pre-market → RTH |
 | **Gap Zone** | Classification gap : NEGLIGIBLE / EXPLOITABLE / EXTENDED / OVEREXTENDED |
 | **RTH** | Regular Trading Hours (09:30-16:00 ET) |
+| **IBKR Streaming** | V9 — streaming temps reel event-driven (~10ms latence) |
 | **PDUFA** | Prescription Drug User Fee Act — date limite decision FDA |
