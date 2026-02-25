@@ -125,7 +125,8 @@ def fetch_candles(ticker, resolution="1", lookback=120):
 def compute_vwap(df):
     pv = (df["close"] * df["volume"]).cumsum()
     vol = df["volume"].cumsum()
-    return pv / vol
+    # Guard against zero cumulative volume (empty bars or all-zero volume)
+    return pv / vol.replace(0, float("nan"))
 
 def raw_momentum(df, n=5):
     base = df["close"].iloc[-n]

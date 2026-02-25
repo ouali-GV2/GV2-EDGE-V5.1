@@ -123,9 +123,10 @@ class AnticipationSignal:
 
 class AnticipationState:
     """Centralized state for anticipation engine"""
-    
+
     def __init__(self):
         self.suspects: Set[str] = set()
+        self._suspects_lock = threading.Lock()
         self.watch_early_signals: Dict[str, AnticipationSignal] = {}
         self.anomaly_cache = Cache(ttl=1800)   # 30 min
         self.news_cache = Cache(ttl=900)       # 15 min
@@ -150,16 +151,19 @@ class AnticipationState:
         self.grok_calls.append(datetime.utcnow())
     
     def add_suspects(self, tickers: List[str]):
-        """Add tickers to suspects list"""
-        self.suspects.update(tickers)
-    
+        """Add tickers to suspects list (thread-safe)"""
+        with self._suspects_lock:
+            self.suspects.update(tickers)
+
     def get_suspects(self) -> List[str]:
-        """Get current suspects"""
-        return list(self.suspects)
-    
+        """Get current suspects (thread-safe)"""
+        with self._suspects_lock:
+            return list(self.suspects)
+
     def clear_suspects(self):
-        """Clear suspects list"""
-        self.suspects.clear()
+        """Clear suspects list (thread-safe)"""
+        with self._suspects_lock:
+            self.suspects.clear()
     
     def add_watch_signal(self, signal: AnticipationSignal):
         """Add/update a WATCH_EARLY signal"""
@@ -170,9 +174,10 @@ class AnticipationState:
         return list(self.watch_early_signals.values())
     
     def remove_watch_signal(self, ticker: str):
-        """Remove a WATCH_EARLY signal"""
+        """Remove a WATCH_EARLY signal (thread-safe for suspects set)"""
         self.watch_early_signals.pop(ticker, None)
-        self.suspects.discard(ticker)
+        with self._suspects_lock:
+            self.suspects.discard(ticker)
 
 
 # Global state instance
@@ -379,17 +384,17 @@ def analyze_with_real_sources(tickers: List[str]) -> List[CatalystEvent]:
 
     try:
         # Import V6.1 ingestors
-        from src.ingestors.sec_filings_ingestor import SECFilingsIngestor
+        from src.ingestors.sec_filings_ingestor import SECIngestor
         from src.ingestors.company_news_scanner import CompanyNewsScanner, ScanPriority
 
-        sec_ingestor = SECFilingsIngestor(set(tickers))
+        sec_ingestor = SECIngestor(set(tickers))
         company_scanner = CompanyNewsScanner()
 
         # 1. Fetch SEC 8-K filings for these tickers
         import asyncio
 
         async def fetch_sec_catalysts():
-            filings = await sec_ingestor.fetch_8k_filings(hours_back=24)
+            filings = await sec_ingestor.fetch_all_recent(hours_back=24)
             return [f for f in filings if f.ticker in tickers]
 
         try:
@@ -410,7 +415,7 @@ def analyze_with_real_sources(tickers: List[str]) -> List[CatalystEvent]:
                 event_type=filing.event_type or "SEC_8K",
                 impact_score=_score_sec_filing(filing),
                 headline=f"SEC 8-K: {filing.form_type}",
-                summary=filing.description or "",
+                summary=filing.summary or "",
                 source="sec_8k",
                 timestamp=filing.filed_date.isoformat() if filing.filed_date else datetime.utcnow().isoformat()
             ))
@@ -730,13 +735,20 @@ def run_anticipation_scan(universe: List[str], mode: str = "auto") -> Dict:
     if anomalies or catalysts:
         logger.info("Step 3: Generating signals...")
         new_signals = generate_signals(anomalies, catalysts)
-        results["new_signals"] = [asdict(s) for s in new_signals]
-    
+        # Serialize enum values to strings for dict consumers (main.py comparisons)
+        results["new_signals"] = [
+            {**asdict(s), "signal_level": s.signal_level.value}
+            for s in new_signals
+        ]
+
     # STEP 4: Check upgrades (PM/RTH only)
     if mode in ["premarket", "intraday"]:
         logger.info("Step 4: Checking upgrades...")
         upgrades = check_signal_upgrades()
-        results["upgrades"] = [asdict(u) for u in upgrades]
+        results["upgrades"] = [
+            {**asdict(u), "signal_level": u.signal_level.value}
+            for u in upgrades
+        ]
     
     # Summary
     logger.info(

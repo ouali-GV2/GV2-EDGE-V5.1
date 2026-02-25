@@ -131,7 +131,8 @@ def get_signal_emoji(signal_type: str) -> str:
     signal_map = {
         "BUY_STRONG": "\U0001F525\U0001F680",     # Fire + Rocket
         "BUY": "\U00002705",                       # Green check
-        "WATCH_EARLY": "\U0001F440",              # Eyes
+        "EARLY_SIGNAL": "\U0001F440",             # Eyes (V9 name)
+        "WATCH_EARLY": "\U0001F440",              # Eyes (legacy name)
         "WATCH": "\U0001F50D",                     # Magnifying glass
         "AVOID": "\U0001F6AB"                      # No entry
     }

@@ -288,9 +288,10 @@ async def process_ticker_v7(ticker: str, state: V7State) -> Optional[UnifiedSign
         try:
             streaming = get_ibkr_streaming()
             if streaming.is_subscribed(ticker):
+                # get_quote() reads from an in-memory dict — non-blocking
                 streaming_quote = streaming.get_quote(ticker)
-        except Exception:
-            pass
+        except Exception as _sq_err:
+            logger.debug(f"Streaming quote error {ticker}: {_sq_err}")
 
         if streaming_quote and streaming_quote.is_valid and streaming_quote.last > 0:
             # Use streaming data (10ms latency)
@@ -540,6 +541,23 @@ def handle_signal_result(signal: UnifiedSignal, state: V7State):
 # EDGE CORE CYCLE V7.0
 # ============================
 
+
+# Persistent event loop — reused across all edge_cycle_v7() calls to avoid
+# creating/destroying a new loop on every cycle (memory leak on long-running server)
+_edge_loop: Optional[asyncio.AbstractEventLoop] = None
+_edge_loop_lock = threading.Lock()
+
+
+def _get_edge_loop() -> asyncio.AbstractEventLoop:
+    """Get or create the persistent event loop for edge cycles."""
+    global _edge_loop
+    with _edge_loop_lock:
+        if _edge_loop is None or _edge_loop.is_closed():
+            _edge_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(_edge_loop)
+        return _edge_loop
+
+
 def edge_cycle_v7():
     """
     V7.0 Edge Cycle - Uses new unified signal architecture
@@ -557,7 +575,24 @@ def edge_cycle_v7():
 
     logger.info(f"V7 CYCLE: Scanning {len(universe)} tickers")
 
-    # Process tickers
+    # Subscribe new tickers to streaming (keeps buffer fed for V8 engines)
+    if state._streaming and state._streaming_started:
+        try:
+            all_tickers = universe["ticker"].tolist()
+            subscribed_count = state._streaming.get_subscription_count()
+            # Top up subscriptions if we have capacity (max 200)
+            remaining = max(0, 200 - subscribed_count)
+            if remaining > 0:
+                new_tickers = [
+                    t for t in all_tickers[:remaining + subscribed_count]
+                    if not state._streaming.is_subscribed(t)
+                ][:remaining]
+                if new_tickers:
+                    state._streaming.subscribe(new_tickers, priority="NORMAL")
+        except Exception as e:
+            logger.debug(f"Streaming subscribe error: {e}")
+
+    # Process tickers using the persistent event loop (avoids memory leak)
     async def process_all():
         for _, row in universe.iterrows():
             ticker = row["ticker"]
@@ -571,8 +606,8 @@ def edge_cycle_v7():
             except Exception as e:
                 logger.error(f"V7 error on {ticker}: {e}", exc_info=True)
 
-    # Run async processing
-    asyncio.run(process_all())
+    loop = _get_edge_loop()
+    loop.run_until_complete(process_all())
 
     # Log cycle summary
     producer_stats = state.producer.get_stats()

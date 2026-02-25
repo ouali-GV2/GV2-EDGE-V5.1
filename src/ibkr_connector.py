@@ -29,7 +29,27 @@ import time
 import threading
 from enum import Enum
 
-from ib_insync import *
+try:
+    from ib_insync import IB, Stock, ScannerSubscription, util
+    _IB_INSYNC_AVAILABLE = True
+except ImportError as _e:
+    import logging as _logging
+    _logging.getLogger("IBKR_CONNECTOR").error(
+        f"ib_insync not installed: {_e}. "
+        "Install with: pip install ib_insync"
+    )
+    _IB_INSYNC_AVAILABLE = False
+    # Stub classes so module-level code does not crash
+    class IB:  # type: ignore
+        def __init__(self): pass
+    class Stock:  # type: ignore
+        def __init__(self, *a, **kw): pass
+    class ScannerSubscription:  # type: ignore
+        def __init__(self): pass
+    class util:  # type: ignore
+        @staticmethod
+        def df(bars): return None
+
 import pandas as pd
 from datetime import datetime, timedelta
 from utils.logger import get_logger
@@ -720,6 +740,10 @@ def get_ibkr():
     global _ibkr_instance
 
     if not USE_IBKR_DATA:
+        return None
+
+    if not _IB_INSYNC_AVAILABLE:
+        logger.warning("ib_insync not available — IBKR connector disabled")
         return None
 
     with _ibkr_lock:
