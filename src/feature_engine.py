@@ -1,3 +1,6 @@
+import asyncio
+import concurrent.futures
+import threading
 import pandas as pd
 from datetime import datetime
 from utils.cache import Cache
@@ -11,6 +14,17 @@ cache = Cache(ttl=60)
 
 FINNHUB_CANDLE = "https://finnhub.io/api/v1/stock/candle"
 
+# Thread pool pour les appels I/O bloquants (Finnhub HTTP, IBKR bars)
+# max_workers=4 : suffisant pour paralléliser sans surcharger le réseau
+_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="feature-io"
+)
+
+# ib_insync n'est pas thread-safe : serialiser les appels get_bars()
+# threading.Semaphore (pas asyncio) car la fonction tourne dans un thread
+_ibkr_bar_lock = threading.Semaphore(1)
+
 # IBKR connector (if enabled)
 ibkr_connector = None
 
@@ -18,7 +32,7 @@ if USE_IBKR_DATA:
     try:
         from src.ibkr_connector import get_ibkr
         ibkr_connector = get_ibkr()
-        if ibkr_connector.connected:
+        if ibkr_connector and ibkr_connector.connected:
             logger.info("✅ IBKR connector active for market data")
         else:
             logger.warning("⚠️ IBKR not connected, falling back to Finnhub")
@@ -67,8 +81,9 @@ def fetch_candles(ticker, resolution="1", lookback=120):
             # Convert resolution to bar size
             bar_size = '1 min' if resolution == "1" else f"{resolution} mins"
             
-            df = ibkr_connector.get_bars(ticker, duration=duration, bar_size=bar_size)
-            
+            with _ibkr_bar_lock:
+                df = ibkr_connector.get_bars(ticker, duration=duration, bar_size=bar_size)
+
             if df is not None and not df.empty:
                 # Take only last 'lookback' bars
                 df = df.tail(lookback)
@@ -285,6 +300,79 @@ def compute_many(tickers, limit=None):
 
     logger.info(f"Computed features for {len(results)} tickers")
     return results
+
+
+# ============================
+# Async versions (non-blocking)
+# ============================
+
+async def fetch_candles_async(ticker, resolution="1", lookback=120):
+    """
+    Async wrapper — runs blocking fetch_candles() in thread pool.
+    ib.sleep(2) stays inside the worker thread, never blocks the event loop.
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        _executor,
+        fetch_candles,
+        ticker, resolution, lookback
+    )
+
+
+async def compute_features_async(ticker, include_advanced=True):
+    """
+    Async version of compute_features.
+    Use from async contexts (e.g. process_ticker_v7) to avoid blocking the event loop.
+    Falls back gracefully to sync compute_features if called outside an event loop.
+    """
+    cached = cache.get(f"feat_{ticker}")
+    if cached:
+        return cached
+
+    try:
+        df = await fetch_candles_async(ticker)
+
+        if df is None or len(df) < 5:
+            return None
+
+        feats = {
+            "momentum": momentum(df),
+            "volume_spike": volume_spike(df),
+            "vwap_dev": vwap_deviation(df),
+            "volatility": volatility(df),
+            "squeeze_proxy": squeeze_proxy(df),
+            "breakout": breakout_high(df),
+            "strong_green": strong_green(df),
+        }
+
+        if include_advanced:
+            try:
+                from src.pattern_analyzer import (
+                    bollinger_squeeze,
+                    volume_accumulation,
+                    higher_lows_pattern,
+                    tight_consolidation,
+                    momentum_acceleration
+                )
+
+                feats["bollinger_squeeze"] = bollinger_squeeze(df)
+                feats["volume_accumulation"] = volume_accumulation(df)
+                feats["higher_lows"] = higher_lows_pattern(df)
+                feats["tight_consolidation"] = tight_consolidation(df)
+                feats["momentum_accel"] = momentum_acceleration(df)
+
+            except Exception as e:
+                logger.warning(f"Advanced patterns error for {ticker}: {e}")
+
+        if not validate_features(feats):
+            return None
+
+        cache.set(f"feat_{ticker}", feats)
+        return feats
+
+    except Exception as e:
+        logger.error(f"Feature error {ticker}: {e}")
+        return None
 
 
 if __name__ == "__main__":

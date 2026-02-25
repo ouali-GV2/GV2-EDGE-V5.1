@@ -108,7 +108,7 @@ from src.ibkr_news_trigger import (
 from src.scoring.monster_score import compute_monster_score
 
 # Feature Engine (for market context)
-from src.feature_engine import compute_features
+from src.feature_engine import compute_features, compute_features_async
 
 # IBKR connector for prices
 from src.ibkr_connector import get_ibkr
@@ -277,8 +277,8 @@ async def process_ticker_v7(ticker: str, state: V7State) -> Optional[UnifiedSign
 
         monster_score = score_data.get("monster_score", 0)
 
-        # Get features for market context
-        features = compute_features(ticker)
+        # Get features for market context (async — never blocks event loop)
+        features = await compute_features_async(ticker)
 
         # Get current price — streaming first (10ms), IBKR poll fallback (2s)
         ibkr = get_ibkr()
