@@ -384,7 +384,7 @@ def phase_pipeline(ticker: str = "AAPL"):
             return await producer.detect(inp)
 
         signal = asyncio.run(_run())
-        print(f"         signal={signal.signal_type.value}  score={signal.final_score:.3f}")
+        print(f"         signal={signal.signal_type.value}  monster_score={signal.monster_score:.3f}")
         return signal
 
     sig = None
@@ -447,9 +447,10 @@ def phase_pipeline(ticker: str = "AAPL"):
             return await guard.assess(ticker, current_price=180.0)
 
         assessment = asyncio.run(_run())
-        print(f"         risk_level={assessment.risk_level}  "
-              f"action={assessment.recommended_action}  "
-              f"size_mult={assessment.size_multiplier:.2f}")
+        print(f"         level={assessment.overall_level.value}  "
+              f"action={assessment.action.value}  "
+              f"blocked={assessment.is_blocked}  "
+              f"pos_mult={assessment.position_multiplier:.2f}")
 
     _check("UnifiedGuard.assess() [async]", check_risk_guard)
 
