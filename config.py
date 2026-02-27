@@ -7,6 +7,7 @@ import os
 # ========= API KEYS =========
 
 GROK_API_KEY = os.getenv("GROK_API_KEY", "")
+GROK_API_URL = os.getenv("GROK_API_URL", "https://api.x.ai/v1")
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
 
 # ========= IBKR CONNECTION =========
