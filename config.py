@@ -29,9 +29,18 @@ IBKR_CLIENT_ID = int(os.getenv("IBKR_CLIENT_ID", "1"))
 # - Historical bars (unlimited)
 # This is SUFFICIENT for GV2-EDGE (Level 2 not needed)
 
-# Telegram
+# Telegram — legacy single-channel (kept for backwards compatibility)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+# Telegram — dual-channel routing (V9)
+# SIGNALS channel: trading alerts (signals, catalysts, pre-spike, multi-radar...)
+# SYSTEM  channel: operational alerts (IBKR, CPU/RAM, audits, session changes...)
+# Fallback to legacy BOT_TOKEN/CHAT_ID if not set
+TELEGRAM_SIGNALS_TOKEN   = os.getenv("TELEGRAM_SIGNALS_TOKEN",  TELEGRAM_BOT_TOKEN)
+TELEGRAM_SIGNALS_CHAT_ID = os.getenv("TELEGRAM_SIGNALS_CHAT_ID", TELEGRAM_CHAT_ID)
+TELEGRAM_SYSTEM_TOKEN    = os.getenv("TELEGRAM_SYSTEM_TOKEN",   TELEGRAM_BOT_TOKEN)
+TELEGRAM_SYSTEM_CHAT_ID  = os.getenv("TELEGRAM_SYSTEM_CHAT_ID",  TELEGRAM_CHAT_ID)
 
 # ========= REDDIT API =========
 # Get credentials at: https://www.reddit.com/prefs/apps

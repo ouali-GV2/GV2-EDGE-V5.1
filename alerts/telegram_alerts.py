@@ -1,29 +1,31 @@
 """
-GV2-EDGE V7.0 — Telegram Alerts System
+GV2-EDGE V9.0 — Telegram Alerts System
 =======================================
 
-Alertes enrichies avec:
-- V7.0 Architecture (SignalProducer -> OrderComputer -> ExecutionGate)
-- UnifiedSignal support (detection always visible, execution gated)
-- MRP/EP Context (Market Memory) badges
-- Pre-Halt Engine alerts
-- IBKR News Trigger integration
-- Risk Guard status (dilution, compliance, halt)
-- Blocked signals notification (full transparency)
-- EVENT_TYPE emojis (18 types, 5 tiers)
+Dual-channel alert routing:
+  SIGNALS channel  → trading alerts (signals, catalysts, pre-spike, multi-radar, etc.)
+  SYSTEM  channel  → operational alerts (IBKR, CPU/RAM, API health, audits, sessions)
 
-Architecture V7 Detection/Execution Separation
+Config (.env):
+  TELEGRAM_SIGNALS_TOKEN    bot token for signals channel (fallback: TELEGRAM_BOT_TOKEN)
+  TELEGRAM_SIGNALS_CHAT_ID  chat id  for signals channel (fallback: TELEGRAM_CHAT_ID)
+  TELEGRAM_SYSTEM_TOKEN     bot token for system  channel (fallback: TELEGRAM_BOT_TOKEN)
+  TELEGRAM_SYSTEM_CHAT_ID   chat id  for system  channel (fallback: TELEGRAM_CHAT_ID)
+
+If only TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are set, both channels use the same group.
 """
 
 import requests
 from typing import Dict, Any, Optional, List
 
 from utils.logger import get_logger
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from config import (
+    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+    TELEGRAM_SIGNALS_TOKEN, TELEGRAM_SIGNALS_CHAT_ID,
+    TELEGRAM_SYSTEM_TOKEN, TELEGRAM_SYSTEM_CHAT_ID,
+)
 
 logger = get_logger("TELEGRAM_ALERTS")
-
-TELEGRAM_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
 
 # ============================
@@ -85,6 +87,50 @@ IMPACT_TO_TIER = {
 
 
 # ============================
+# Send message (dual-channel)
+# ============================
+
+def send_message(text: str, parse_mode: str = "Markdown", channel: str = "signals") -> bool:
+    """
+    Send message to Telegram.
+
+    Args:
+        text:        Message text
+        parse_mode:  "Markdown" or "HTML"
+        channel:     "signals" (trading alerts) or "system" (operational alerts)
+
+    Returns:
+        Success status
+    """
+    if channel == "system":
+        token = TELEGRAM_SYSTEM_TOKEN
+        chat_id = TELEGRAM_SYSTEM_CHAT_ID
+    else:
+        token = TELEGRAM_SIGNALS_TOKEN
+        chat_id = TELEGRAM_SIGNALS_CHAT_ID
+
+    if not token or not chat_id:
+        logger.warning(f"Telegram {channel} channel not configured (token/chat_id missing)")
+        return False
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": parse_mode
+        }
+        r = requests.post(url, json=payload, timeout=5)
+        if r.status_code != 200:
+            logger.warning(f"Telegram {channel} error: {r.text}")
+            return False
+        return True
+    except Exception as e:
+        logger.error(f"Telegram {channel} send failed: {e}")
+        return False
+
+
+# ============================
 # Helper Functions
 # ============================
 
@@ -140,42 +186,7 @@ def get_signal_emoji(signal_type: str) -> str:
 
 
 # ============================
-# Send message
-# ============================
-
-def send_message(text: str, parse_mode: str = "Markdown") -> bool:
-    """
-    Send message to Telegram
-
-    Args:
-        text: Message text
-        parse_mode: "Markdown" or "HTML"
-
-    Returns:
-        Success status
-    """
-    try:
-        payload = {
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": text,
-            "parse_mode": parse_mode
-        }
-
-        r = requests.post(TELEGRAM_URL, json=payload, timeout=5)
-
-        if r.status_code != 200:
-            logger.warning(f"Telegram error: {r.text}")
-            return False
-
-        return True
-
-    except Exception as e:
-        logger.error(f"Telegram send failed: {e}")
-        return False
-
-
-# ============================
-# V7 Signal Alert (Enhanced)
+# V9 Signal Alert (Enhanced)
 # ============================
 
 def send_signal_alert(
@@ -184,10 +195,10 @@ def send_signal_alert(
     v7_data: Optional[Dict[str, Any]] = None
 ):
     """
-    Send enhanced V7.0 signal alert
+    Send enhanced V9.0 signal alert
 
-    Supports both legacy dict format and V7 UnifiedSignal fields.
-    V7 shows ALL signals (detection never blocked) with execution status.
+    Supports both legacy dict format and V7/V9 UnifiedSignal fields.
+    V9 shows ALL signals (detection never blocked) with execution status.
 
     Args:
         signal: Signal data (ticker, signal, monster_score, confidence, notes)
@@ -218,7 +229,7 @@ def send_signal_alert(
 
     # Build header
     msg = f"""
-{signal_emoji} *GV2-EDGE V7.0 SIGNAL*
+{signal_emoji} *GV2-EDGE V9.0 SIGNAL*
 
 \U0001F4CA Ticker: `{ticker}`
 \U000026A1 Signal: *{signal_type}*
@@ -540,11 +551,12 @@ def send_daily_audit_alert(report: Dict[str, Any]):
     fp_count = summary.get('fp_count', 0)
     avg_lead = summary.get('avg_lead_time_hours', 0)
 
+    grade_icon = grade_emoji.get(grade, "\U00002753")
     msg = f"""
-\U0001F4CA *GV2-EDGE V7.0 DAILY AUDIT*
+\U0001F4CA *GV2-EDGE V9.0 DAILY AUDIT*
 \U0001F4C5 Date: `{audit_date}`
 
-{grade_emoji.get(grade, '\U00002753')} *Performance Grade: {grade}*
+{grade_icon} *Performance Grade: {grade}*
 
 *--- Core Metrics ---*
 \U0001F4C8 Hit Rate: `{hit_rate*100:.1f}%`
@@ -554,10 +566,10 @@ def send_daily_audit_alert(report: Dict[str, Any]):
 \U0001F3AF False Positives: `{fp_count}`
 """
 
-    # V7 Module Stats
+    # V9 Module Stats
     v7_stats = report.get("v7_stats", report.get("v6_stats", {}))
     if v7_stats:
-        msg += "\n*--- V7 Module Performance ---*\n"
+        msg += "\n*--- V9 Module Performance ---*\n"
 
         if 'signals_produced' in v7_stats:
             msg += f"\U0001F4E1 Signals Produced: `{v7_stats['signals_produced']}`\n"
@@ -588,7 +600,7 @@ def send_daily_audit_alert(report: Dict[str, Any]):
     if misses:
         msg += f"\n*\U0000274C TOP MISSES:* {', '.join(misses)}"
 
-    send_message(msg)
+    send_message(msg, channel="system")
 
 
 # ============================
@@ -610,7 +622,7 @@ def send_weekly_audit_alert(report: Dict[str, Any]):
     trend_emoji = "\U0001F4C8" if trend == "improving" else "\U0001F4C9" if trend == "declining" else "\U00002796"
 
     msg = f"""
-\U0001F4CA *GV2-EDGE V7.0 WEEKLY AUDIT*
+\U0001F4CA *GV2-EDGE V9.0 WEEKLY AUDIT*
 \U0001F4C5 Period: `{period.get('start', 'N/A')}` to `{period.get('end', 'N/A')}`
 \U0001F4C6 Days with data: `{period.get('days_with_data', 0)}`
 
@@ -639,7 +651,7 @@ def send_weekly_audit_alert(report: Dict[str, Any]):
             reason = rec.get('reason', '')
             msg += f"  \U00002022 {action} `{component}`: _{reason}_\n"
 
-    send_message(msg)
+    send_message(msg, channel="system")
 
 
 # ============================
@@ -663,8 +675,8 @@ def send_system_alert(text: str, level: str = "info"):
 
     emoji, label = level_config.get(level, level_config["info"])
 
-    msg = f"{emoji} *GV2-EDGE V7.0 {label}*\n\n{text}"
-    send_message(msg)
+    msg = f"{emoji} *GV2-EDGE V9.0 {label}*\n\n{text}"
+    send_message(msg, channel="system")
 
 
 # ============================
@@ -695,11 +707,11 @@ def send_session_alert(session: str, active_signals: int = 0):
 \U0001F4CA Active Signals: `{active_signals}`
 """
 
-    send_message(msg)
+    send_message(msg, channel="system")
 
 
 # ============================
-# Pre-Halt Alert (V7)
+# Pre-Halt Alert (V9)
 # ============================
 
 def send_pre_halt_alert(
@@ -732,13 +744,15 @@ def send_pre_halt_alert(
         "BLOCKED": "\U0001F6AB"
     }
 
+    state_icon = state_emoji.get(pre_halt_state, "\U00002753")
+    rec_icon = rec_emoji.get(recommendation, "\U00002753")
     msg = f"""
-{state_emoji.get(pre_halt_state, '\U00002753')} *PRE-HALT ENGINE ALERT*
+{state_icon} *PRE-HALT ENGINE ALERT*
 
 \U0001F4CA Ticker: `{ticker}`
 \U000026A0 Halt Risk: *{pre_halt_state}*
 
-{rec_emoji.get(recommendation, '\U00002753')} Recommendation: `{recommendation}`
+{rec_icon} Recommendation: `{recommendation}`
 \U0001F4CA Size Multiplier: `{size_multiplier*100:.0f}%`
 
 *Monitor closely - halt risk elevated*
@@ -782,11 +796,13 @@ def send_news_trigger_alert(
         "RISK_ALERT": "\U000026A0"
     }
 
+    level_icon = level_emoji.get(trigger_level, "\U0001F4F0")
+    type_icon = type_emoji.get(trigger_type, "\U0001F4F0")
     msg = f"""
-{level_emoji.get(trigger_level, '\U0001F4F0')} *IBKR NEWS TRIGGER*
+{level_icon} *IBKR NEWS TRIGGER*
 
 \U0001F4CA Ticker: `{ticker}`
-{type_emoji.get(trigger_type, '\U0001F4F0')} Type: `{trigger_type}`
+{type_icon} Type: `{trigger_type}`
 Level: *{trigger_level}*
 
 \U0001F4F0 _{headline[:150]}_
@@ -850,7 +866,7 @@ def send_ibkr_connection_alert(status: str, details: dict = None):
     else:
         msg = f"\U0001F50C *IBKR {status.upper()}*"
 
-    send_message(msg)
+    send_message(msg, channel="system")
 
 
 # ============================
@@ -1049,16 +1065,17 @@ def send_multi_radar_alert(
 # ============================
 
 if __name__ == "__main__":
-    # Test basic connection
-    send_message("\U00002705 GV2-EDGE V7.0 Telegram connected")
+    # Test both channels
+    send_message("\U00002705 GV2-EDGE V9.0 SIGNALS channel connected", channel="signals")
+    send_message("\U00002699 GV2-EDGE V9.0 SYSTEM  channel connected", channel="system")
 
-    # Test V7 signal alert
+    # Test V9 signal alert
     test_signal = {
         "ticker": "TEST",
         "signal": "BUY_STRONG",
         "monster_score": 0.85,
         "confidence": 0.92,
-        "notes": "V7.0 | NORMAL"
+        "notes": "V9.0 | NORMAL"
     }
 
     test_v7_data = {

@@ -21,7 +21,9 @@ openai
 
 # Visualization & Dashboard
 streamlit
+streamlit-autorefresh
 plotly
+websockets
 
 # IBKR API (Interactive Brokers)
 ib-insync

@@ -114,7 +114,7 @@ Only return a JSON with:
 Be conservative - only count clear stock ticker mentions, not company name in other contexts."""
         
         payload = {
-            "model": "grok-4-1-fast-reasoning",  # FIXED: Updated from grok-beta
+            "model": "grok-3-fast",
             "messages": [
                 {"role": "user", "content": prompt}
             ],

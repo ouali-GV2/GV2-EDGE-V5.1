@@ -39,8 +39,23 @@ cache = Cache(ttl=60 * 60 * 24)
 
 FINNHUB_BASE = "https://finnhub.io/api/v1"
 
-# OTC exchange keywords to exclude
-_OTC_KEYWORDS = re.compile(r"OTC|Pink|Grey|Expert", re.IGNORECASE)
+# Valid major US exchange MICs (NYSE, NASDAQ, ARCA, AMEX, BATS, IEX)
+# Anything not in this set is OTC/Pink/Grey and excluded
+_VALID_MICS = {
+    "XNYS",  # NYSE
+    "XNAS",  # NASDAQ (all tiers)
+    "XNMS",  # NASDAQ Global Market Select
+    "XNMQ",  # NASDAQ Global Market
+    "XNCM",  # NASDAQ Capital Market
+    "ARCX",  # NYSE Arca
+    "XASE",  # NYSE American (ex-AMEX)
+    "BATS",  # CBOE BZX (BATS)
+    "XCBO",  # CBOE
+    "IEXG",  # IEX
+    "XBOS",  # NASDAQ OMX BX
+    "XPHL",  # NASDAQ OMX PHLX
+    "EDGX",  # CBOE EDGX
+}
 
 # Ticker suffix patterns for warrants, rights, units
 # W, WS = warrants, R = rights, U = units
@@ -48,6 +63,9 @@ _BAD_SUFFIX = re.compile(r"[WR]$|WS$|U$")
 
 # Characters that indicate non-standard securities
 _BAD_CHARS = re.compile(r"[./+$]")
+
+# Foreign OTC tickers typically end in F (e.g. CCCMF, ELIAF, OLCLF)
+_FOREIGN_OTC = re.compile(r"F$")
 
 
 # ============================
@@ -107,14 +125,15 @@ def filter_universe(symbols_df):
     logger.info(f"After Common Stock filter: {len(filtered)} "
                 f"(removed {initial_count - len(filtered)})")
 
-    # 2. Exclude OTC exchanges
-    if "exchange" in filtered.columns:
+    # 2. Filter by MIC — keep only major US exchange-listed stocks
+    # Finnhub returns "mic" (Market Identifier Code), not "exchange"
+    if "mic" in filtered.columns:
         before = len(filtered)
-        filtered = filtered[
-            ~filtered["exchange"].str.contains(_OTC_KEYWORDS, na=False)
-        ]
-        logger.info(f"After OTC exclusion: {len(filtered)} "
-                    f"(removed {before - len(filtered)})")
+        filtered = filtered[filtered["mic"].isin(_VALID_MICS)]
+        logger.info(f"After MIC filter (exchange-listed only): {len(filtered)} "
+                    f"(removed {before - len(filtered)} OTC/Pink/Grey)")
+    else:
+        logger.warning("No 'mic' column in Finnhub response — OTC filter skipped")
 
     # 3. Clean ticker symbols
     if "symbol" in filtered.columns:
@@ -125,17 +144,21 @@ def filter_universe(symbols_df):
         mask_suffix = filtered["symbol"].str.match(
             r".*(" + _BAD_SUFFIX.pattern + r")", na=False
         )
-        filtered = filtered[~mask_chars & ~mask_suffix]
+        # Remove foreign OTC tickers ending in F (e.g. CCCMF, ELIAF)
+        mask_foreign = filtered["symbol"].str.match(
+            r".*" + _FOREIGN_OTC.pattern, na=False
+        )
+        filtered = filtered[~mask_chars & ~mask_suffix & ~mask_foreign]
         logger.info(f"After symbol cleanup: {len(filtered)} "
                     f"(removed {before - len(filtered)})")
 
     # Build output DataFrame with standardized column names
     result = pd.DataFrame({
         "ticker": filtered["symbol"].values,
-        "exchange": filtered.get("exchange", pd.Series(dtype=str)).values
-                    if "exchange" in filtered.columns
+        "exchange": filtered["mic"].values
+                    if "mic" in filtered.columns
                     else [""] * len(filtered),
-        "name": filtered.get("description", pd.Series(dtype=str)).values
+        "name": filtered["description"].values
                 if "description" in filtered.columns
                 else [""] * len(filtered),
     })

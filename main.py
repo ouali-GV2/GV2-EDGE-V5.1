@@ -19,7 +19,7 @@ from src.universe_loader import load_universe
 from src.signal_logger import log_signal
 from src.watch_list import get_watch_list, get_watch_upgrades
 
-from alerts.telegram_alerts import send_signal_alert
+from alerts.telegram_alerts import send_signal_alert, send_system_alert
 from monitoring.system_guardian import run_guardian
 from weekly_deep_audit import run_weekly_audit_v2
 from src.afterhours_scanner import run_afterhours_scanner
@@ -109,7 +109,7 @@ from src.pre_spike_radar import scan_pre_spike
 # IBKR News Trigger
 from src.ibkr_news_trigger import (
     IBKRNewsTrigger,
-    get_news_trigger,
+    get_ibkr_news_trigger as get_news_trigger,
 )
 
 # Monster Score (for detection input)
@@ -798,6 +798,18 @@ def should_run_weekly_audit():
 
 
 # ============================
+# UNIVERSE REBUILD SCHEDULER
+# ============================
+
+last_universe_rebuild_day = None
+
+def should_rebuild_universe():
+    """Rebuild universe every Sunday at 02:00 UTC (before watch list at 03:00)"""
+    now = datetime.datetime.utcnow()
+    return now.weekday() == 6 and now.hour == 2  # Sunday 02h UTC
+
+
+# ============================
 # DAILY AUDIT SCHEDULER
 # ============================
 
@@ -876,6 +888,7 @@ def generate_and_send_watch_list():
 def run_edge():
     global last_audit_day
     global last_daily_audit_day
+    global last_universe_rebuild_day
 
     arch_mode = "V7.0" if USE_V7_ARCHITECTURE else "LEGACY"
     logger.info(f"GV2-EDGE LIVE ENGINE STARTED ({arch_mode} ARCHITECTURE)")
@@ -980,6 +993,24 @@ def run_edge():
     while True:
         try:
             now = datetime.datetime.utcnow().date()
+
+            # ---- Weekly Universe Rebuild (Sunday 02:00 UTC) ----
+            if should_rebuild_universe() and now != last_universe_rebuild_day:
+                logger.info("Weekly universe rebuild starting...")
+                try:
+                    old_universe = load_universe()
+                    old_count = len(old_universe) if old_universe is not None else 0
+                    new_universe = load_universe(force_refresh=True)
+                    new_count = len(new_universe) if new_universe is not None else 0
+                    last_universe_rebuild_day = now
+                    logger.info(f"Universe rebuilt: {old_count} → {new_count} tickers")
+                    send_system_alert(
+                        f"🔄 *Universe Rebuilt* (weekly)\n"
+                        f"Tickers: `{old_count}` → `{new_count}`\n"
+                        f"Source: Finnhub US (MIC-filtered, Common Stock only)"
+                    )
+                except Exception as e:
+                    logger.error(f"Weekly universe rebuild failed: {e}", exc_info=True)
 
             # ---- Daily WATCH list (3 AM UTC) ----
             if should_generate_watch_list():
