@@ -6,6 +6,7 @@ Refresh : streamlit-autorefresh (non-bloquant)
 Responsive : CSS grid + media queries (mobile / tablet / desktop)
 """
 
+import sys
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -15,6 +16,12 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections import deque
+
+# Ensure project root is on sys.path so 'src', 'utils', 'config' are importable
+# regardless of the working directory when Streamlit is launched.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 try:
     from streamlit_autorefresh import st_autorefresh
