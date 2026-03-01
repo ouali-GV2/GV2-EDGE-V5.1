@@ -857,22 +857,37 @@ with tab3:
         except Exception:
             pass
 
-        # SOURCE 2: Earnings from events_cache (sorted by date, next 14 days)
+        # SOURCE 2: ALL events from events_cache
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        cutoff = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
+        cutoff_earnings = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d")
+        cutoff_news     = (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%d")
         for e in events_cache:
-            if e.get("type") != "earnings":
-                continue
-            date = e.get("date", "")
-            if not (today_str <= date <= cutoff):
-                continue
-            meta = e.get("metadata", {}) or {}
-            eps  = meta.get("eps_estimate")
-            note = f"EPS est. {eps:.2f}" if eps is not None else "earnings"
+            etype  = e.get("type", "")
+            date   = e.get("date", "")
+            ticker = e.get("ticker", "—") or "—"
+            meta   = e.get("metadata", {}) or {}
+
+            if etype == "earnings":
+                if not (today_str <= date <= cutoff_earnings):
+                    continue
+                eps  = meta.get("eps_estimate")
+                note = f"EPS est. {eps:.2f}" if eps is not None else "earnings"
+
+            elif etype == "news":
+                if not (today_str <= date <= cutoff_news):
+                    continue
+                note = meta.get("headline", meta.get("text", "news"))[:60]
+
+            else:
+                # FDA_APPROVAL, M_AND_A, CONTRACT, etc. — no date filter
+                if date and date < today_str:
+                    continue
+                note = meta.get("headline", meta.get("text", etype))[:60]
+
             cal_rows.append({
                 "Date":   date,
-                "Ticker": e.get("ticker", "—"),
-                "Type":   "earnings",
+                "Ticker": ticker,
+                "Type":   etype,
                 "Note":   note,
             })
 
