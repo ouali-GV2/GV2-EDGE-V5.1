@@ -61,7 +61,10 @@ st.markdown("""
 }
 
 .stApp { background: linear-gradient(135deg,#0a0e17 0%,#0f172a 100%); font-family:'Outfit',sans-serif; }
-#MainMenu,footer,header { visibility:hidden; }
+#MainMenu, footer { visibility:hidden; }
+/* Hide Streamlit branding in header but keep the sidebar toggle button */
+header [data-testid="stToolbar"] { visibility:hidden; }
+header { background:transparent !important; }
 h1,h2,h3 { font-family:'Outfit',sans-serif !important; font-weight:600 !important; color:var(--text) !important; }
 h1 {
     font-size:clamp(1.4rem,3vw,2.2rem) !important;
