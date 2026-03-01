@@ -154,27 +154,13 @@ def fetch_earnings_events(days_forward=7):
 # Fetch breaking news (fallback)
 # ============================
 
-def fetch_breaking_news(category="general"):
-    """
-    General market news — returns structured event dicts.
-    Extracts ticker from headline text (TickerExtractor) when 'related' is empty.
-    """
-    params = {
-        "category": category,
-        "token": FINNHUB_API_KEY
-    }
-
-    # Lazy-load ticker extractor (no universe needed — extract_all validates syntax only)
+def _fetch_news_category(category: str, extractor) -> list:
+    """Fetch one Finnhub news category and return structured event dicts."""
+    params = {"category": category, "token": FINNHUB_API_KEY}
     try:
-        from src.processors.ticker_extractor import TickerExtractor
-        _extractor = TickerExtractor()
-    except Exception:
-        _extractor = None
-
-    try:
-        r = pool_safe_get(FINNHUB_GENERAL_NEWS, params=params, timeout=10, provider="finnhub", task_type="GENERAL_NEWS")
+        r = pool_safe_get(FINNHUB_GENERAL_NEWS, params=params, timeout=10,
+                          provider="finnhub", task_type="GENERAL_NEWS")
         data = r.json()
-
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         events = []
         for item in data:
@@ -182,19 +168,18 @@ def fetch_breaking_news(category="general"):
             summary  = item.get("summary", "")
             if not headline:
                 continue
-
-            # Prefer 'related' field; fallback to NLP extraction from headline
+            # Prefer 'related'; then TickerExtractor; then "MARKET" for macro news
             ticker = (item.get("related", "") or "").strip().upper()
-            if not ticker and _extractor:
-                extracted = _extractor.extract_all(f"{headline}. {summary}")
+            if not ticker and extractor:
+                extracted = extractor.extract_all(f"{headline}. {summary}")
                 ticker = extracted[0] if extracted else ""
-
+            if not ticker:
+                ticker = "MARKET"
             ts = item.get("datetime", 0)
             try:
                 date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d") if ts else today
             except Exception:
                 date = today
-
             events.append({
                 "text":     f"{headline}. {summary}",
                 "headline": headline,
@@ -204,13 +189,29 @@ def fetch_breaking_news(category="general"):
                 "source":   item.get("source", ""),
                 "impact":   0.5,
             })
-
-        logger.info(f"Fetched {len(events)} breaking news")
         return events
-
     except Exception as e:
-        logger.warning(f"Breaking news fetch failed: {e}")
+        logger.warning(f"Breaking news fetch failed ({category}): {e}")
         return []
+
+
+def fetch_breaking_news(category="general"):
+    """
+    General + merger market news — returns structured event dicts.
+    'merger' category naturally has tickers in 'related'.
+    'general' uses TickerExtractor fallback; macro news tagged MARKET.
+    """
+    try:
+        from src.processors.ticker_extractor import TickerExtractor
+        _extractor = TickerExtractor()
+    except Exception:
+        _extractor = None
+
+    events = _fetch_news_category("general", _extractor)
+    events += _fetch_news_category("merger", _extractor)
+
+    logger.info(f"Fetched {len(events)} breaking news (general+merger)")
+    return events
 
 
 # ============================
