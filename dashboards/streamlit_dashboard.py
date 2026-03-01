@@ -275,9 +275,16 @@ def load_extended_gaps() -> list:
 
 @st.cache_data(ttl=30)
 def load_events_cache() -> list:
+    """Load events from file cache. Always returns a list (handles {} or [] or missing file)."""
     try:
         with open(DATA_DIR/"events_cache.json") as f:
-            return json.load(f)
+            data = json.load(f)
+        # File might be {} (dict) from a reset — convert to list of values or return []
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and data:
+            return list(data.values()) if all(isinstance(v, dict) for v in data.values()) else []
+        return []
     except Exception:
         return []
 
@@ -776,19 +783,45 @@ with tab2:
 
 with tab3:
     st.markdown("### 📅 Catalysts & Events")
-    events_cache=load_events_cache()
-    ce,cside=st.columns([2,1])
+    # Controls row
+    rc1, rc2 = st.columns([5, 1])
+    with rc2:
+        if st.button("🔄 Refresh", key="refresh_events", help="Re-fetch events from all sources"):
+            try:
+                from src.event_engine.event_hub import refresh_events
+                with st.spinner("Fetching events…"):
+                    refresh_events()
+                st.cache_data.clear()
+                st.success("Events refreshed!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Refresh failed: {e}")
+
+    events_cache = load_events_cache()
+
+    # If file cache is empty, try live fetch (earnings + breaking news only, no tickers needed)
+    if not events_cache:
+        try:
+            from src.event_engine.event_hub import build_events
+            events_cache = build_events(tickers=None) or []
+        except Exception:
+            events_cache = []
+
+    ce, cside = st.columns([2, 1])
     with ce:
         if events_cache:
-            df_ev=pd.DataFrame(events_cache)
+            df_ev = pd.DataFrame(events_cache)
             if "type" in df_ev.columns:
                 st.markdown("#### Event Types")
-                st.plotly_chart(chart_events_pie(df_ev["type"].value_counts()),use_container_width=True)
-                show=[c for c in ["ticker","type","boosted_impact","date","is_bearish"] if c in df_ev.columns]
-                st.markdown("#### Recent Events")
-                st.dataframe(df_ev[show].head(30),use_container_width=True,hide_index=True)
+                st.plotly_chart(chart_events_pie(df_ev["type"].value_counts()), use_container_width=True)
+            show = [c for c in ["ticker", "type", "boosted_impact", "date", "is_bearish"] if c in df_ev.columns]
+            if show:
+                st.markdown(f"#### Recent Events ({len(df_ev)} total)")
+                st.dataframe(df_ev[show].head(50), use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(df_ev.head(30), use_container_width=True, hide_index=True)
         else:
-            st.info("No events cached yet")
+            st.info("No events cached yet — click 🔄 Refresh to fetch live events.")
     with cside:
         st.markdown("#### Upcoming Catalysts")
         try:
