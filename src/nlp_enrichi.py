@@ -385,7 +385,7 @@ def _call_grok(prompt: str, text: str, temperature: float = 0.1) -> Optional[Dic
     if not GROK_API_KEY:
         logger.warning("GROK_API_KEY not set")
         return None
-n    import time as _time
+    import time as _time
     global _grok_quota_exhausted_until
     if _time.time() < _grok_quota_exhausted_until:
         return None
