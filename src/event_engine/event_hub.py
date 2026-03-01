@@ -156,7 +156,8 @@ def fetch_earnings_events(days_forward=7):
 
 def fetch_breaking_news(category="general"):
     """
-    Fallback: general market news
+    General market news — returns structured event dicts (not raw text strings).
+    Uses Finnhub 'related' field as ticker when available.
     """
     params = {
         "category": category,
@@ -167,15 +168,31 @@ def fetch_breaking_news(category="general"):
         r = pool_safe_get(FINNHUB_GENERAL_NEWS, params=params, timeout=10, provider="finnhub", task_type="GENERAL_NEWS")
         data = r.json()
 
-        texts = []
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        events = []
         for item in data:
             headline = item.get("headline", "")
-            summary = item.get("summary", "")
-            if headline:
-                texts.append(f"{headline}. {summary}")
+            summary  = item.get("summary", "")
+            if not headline:
+                continue
+            ticker = (item.get("related", "") or "").strip().upper()
+            ts     = item.get("datetime", 0)
+            try:
+                date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d") if ts else today
+            except Exception:
+                date = today
+            events.append({
+                "text":     f"{headline}. {summary}",
+                "headline": headline,
+                "ticker":   ticker,
+                "type":     "news",
+                "date":     date,
+                "source":   item.get("source", ""),
+                "impact":   0.5,
+            })
 
-        logger.info(f"Fetched {len(texts)} breaking news")
-        return texts
+        logger.info(f"Fetched {len(events)} breaking news")
+        return events
 
     except Exception as e:
         logger.warning(f"Breaking news fetch failed: {e}")
@@ -250,42 +267,57 @@ def build_events(tickers=None, force_refresh=False):
         earnings_events = fetch_earnings_events(days_forward=7)
         all_events.extend(earnings_events)
 
-        # SOURCE 3: Breaking news (general market catalysts)
-        breaking_news_texts = fetch_breaking_news(category="general")
-        
+        # SOURCE 3: Breaking news (structured dicts, ticker from 'related' field)
+        breaking_news_events = fetch_breaking_news(category="general")
+        all_events.extend(breaking_news_events)
+
         # SOURCE 4: FDA Calendar (PDUFA + trials + conferences) 🧬
         if FDA_CALENDAR_AVAILABLE:
             try:
                 fda_events = get_all_fda_events()
-                
+
                 # Filter by universe if provided
                 if universe_set:
                     fda_events = [e for e in fda_events if e.get("ticker", "").upper() in universe_set]
-                
+
                 logger.info(f"FDA Calendar: {len(fda_events)} events (PDUFA/trials/conferences)")
                 all_events.extend(fda_events)
             except Exception as e:
                 logger.warning(f"FDA calendar fetch failed: {e}")
 
-        # Parse all text-based events
+        # NLP enrichment (best-effort — failures do NOT drop events)
         text_events = [e["text"] for e in all_events if "text" in e]
-        text_events.extend(breaking_news_texts)
+        try:
+            nlp_enriched = parse_many_texts(text_events)
+        except Exception as nlp_err:
+            logger.warning(f"NLP enrichment skipped: {nlp_err}")
+            nlp_enriched = []
 
-        # NLP parsing
-        parsed_events = parse_many_texts(text_events)
-
-        # Merge company-specific metadata
+        # Direct structured events — ALL types (earnings, news, FDA, …)
+        _IMPACT = {
+            "earnings": 0.8,
+            "PDUFA": 0.85,
+            "TRIAL_RESULT": 0.75,
+            "CONFERENCE": 0.6,
+            "news": 0.5,
+        }
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        parsed_events = []
         for event in all_events:
-            if "ticker" in event and event["type"] != "news":
-                # Earnings events with metadata
-                parsed_events.append({
-                    "ticker": event["ticker"],
-                    "type": event["type"],
-                    "date": event.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
-                    "impact": 0.8 if event["type"] == "earnings" else 0.6,
-                    "category": event["type"],
-                    "metadata": event
-                })
+            if "ticker" not in event:
+                continue
+            etype = event.get("type", "news")
+            parsed_events.append({
+                "ticker":   event["ticker"],
+                "type":     etype,
+                "date":     event.get("date", today_str),
+                "impact":   _IMPACT.get(etype, 0.6),
+                "category": etype,
+                "metadata": {k: v for k, v in event.items() if k != "text"},
+            })
+
+        # Append NLP-enriched events (may add extra ticker-specific signals)
+        parsed_events.extend(nlp_enriched)
 
         # Apply proximity boost
         boosted_events = []
@@ -327,12 +359,22 @@ def build_events(tickers=None, force_refresh=False):
 # ============================
 
 def deduplicate_events(events):
-    """Remove duplicate events (same ticker + same day)"""
+    """Remove duplicate events. Key: (ticker, date, type) — news uses headline snippet to preserve distinct articles."""
     seen = set()
     unique = []
 
     for e in events:
-        key = (e.get("ticker", ""), e.get("date", ""))
+        ticker = e.get("ticker", "")
+        date   = e.get("date", "")
+        etype  = e.get("type", "")
+        if etype == "news":
+            # Use headline snippet so distinct news articles are kept
+            meta = e.get("metadata", {})
+            headline = (meta.get("headline", "") if isinstance(meta, dict) else "")[:60]
+            key = (etype, ticker, date, headline)
+        else:
+            key = (ticker, date, etype)
+
         if key not in seen:
             seen.add(key)
             unique.append(e)

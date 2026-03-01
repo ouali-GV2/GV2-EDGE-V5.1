@@ -789,10 +789,17 @@ with tab3:
         if st.button("🔄 Refresh", key="refresh_events", help="Re-fetch events from all sources"):
             try:
                 from src.event_engine.event_hub import refresh_events
+                from src.universe_loader import get_universe
                 with st.spinner("Fetching events…"):
-                    refresh_events()
+                    raw_universe = get_universe() or []
+                    tickers = [
+                        (t.get("ticker") or t.get("symbol") if isinstance(t, dict) else t)
+                        for t in raw_universe
+                    ]
+                    tickers = [t for t in tickers if t][:150]
+                    refresh_events(tickers=tickers or None)
                 st.cache_data.clear()
-                st.success("Events refreshed!")
+                st.success(f"Events refreshed! ({len(tickers)} tickers)")
                 st.rerun()
             except Exception as e:
                 st.error(f"Refresh failed: {e}")
@@ -811,15 +818,24 @@ with tab3:
     with ce:
         if events_cache:
             df_ev = pd.DataFrame(events_cache)
+            # Extract headline from metadata for news events
+            if "metadata" in df_ev.columns:
+                df_ev["headline"] = df_ev["metadata"].apply(
+                    lambda m: m.get("headline", "") if isinstance(m, dict) else ""
+                )
             if "type" in df_ev.columns:
                 st.markdown("#### Event Types")
                 st.plotly_chart(chart_events_pie(df_ev["type"].value_counts()), use_container_width=True)
-            show = [c for c in ["ticker", "type", "boosted_impact", "date", "is_bearish"] if c in df_ev.columns]
+                # Filter by type
+                all_types = sorted(df_ev["type"].dropna().unique().tolist())
+                sel_types = st.multiselect("Filter by type", all_types, default=all_types, key="ev_type_filter")
+                df_ev = df_ev[df_ev["type"].isin(sel_types)] if sel_types else df_ev
+            show = [c for c in ["ticker", "type", "boosted_impact", "date", "headline", "is_bearish"] if c in df_ev.columns]
             if show:
                 st.markdown(f"#### Recent Events ({len(df_ev)} total)")
-                st.dataframe(df_ev[show].head(50), use_container_width=True, hide_index=True)
+                st.dataframe(df_ev[show].head(100), use_container_width=True, hide_index=True)
             else:
-                st.dataframe(df_ev.head(30), use_container_width=True, hide_index=True)
+                st.dataframe(df_ev.head(50), use_container_width=True, hide_index=True)
         else:
             st.info("No events cached yet — click 🔄 Refresh to fetch live events.")
     with cside:
